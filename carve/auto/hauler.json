@@ -1,0 +1,23 @@
+{
+ "kind": "hauler",
+ "name": "Hauler",
+ "legs": [
+  {
+   "from": "Tree farm",
+   "to": "Smelter",
+   "item": "log"
+  },
+  {
+   "from": "Smelter",
+   "to": "Compressor",
+   "item": "charcoal"
+  },
+  {
+   "from": "Compressor",
+   "to": "Storage keeper",
+   "item": "charcoal"
+  }
+ ],
+ "wait": 20,
+ "cycles": 0
+}
