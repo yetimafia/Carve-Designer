@@ -1,6 +1,7 @@
 {
  "kind": "treefarm",
  "name": "Tree farm",
+ "label": "Juno",
  "cols": 3,
  "rows": 3,
  "spacing": 4,
