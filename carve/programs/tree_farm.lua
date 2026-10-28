@@ -6,7 +6,7 @@
 
 local args = { ... }
 
-local PLAN = {bonemeal = false, chest = true, cols = 3, cycles = 0, kind = "treefarm", live = "http://127.0.0.1:8765", name = "Tree farm", rows = 3, sapling = "minecraft:oak_sapling", spacing = 4, wait = 600}
+local PLAN = {bonemeal = false, chest = true, cols = 3, cycles = 0, kind = "treefarm", label = "Juno", live = "http://127.0.0.1:8765", name = "Tree farm", rows = 3, sapling = "minecraft:oak_sapling", spacing = 4, wait = 600}
 
 local STATE_FILE = "carve.farm"
 local TITLE = PLAN.name or "Tree farm"
@@ -16,6 +16,14 @@ local KEEP = {}
 
 ---------------------------------------------------------------- shared helpers (position, moving, fuel)
 -- directions: 1 = +z (forward at start), 2 = +x (right), 3 = -z (back), 4 = -x (left), 5 = up, 6 = down
+-- every turtle names itself after a Roman god (by its id) the first time it starts, if it has no label yet
+do
+  local GODS = { "Jupiter", "Juno", "Neptune", "Minerva", "Mars", "Venus", "Apollo", "Diana", "Vulcan", "Vesta", "Mercury", "Ceres", "Bacchus", "Pluto", "Saturn", "Janus", "Aurora", "Bellona", "Cupid", "Faunus", "Flora", "Fortuna", "Juventas", "Luna", "Sol", "Terra", "Pomona", "Proserpina", "Quirinus", "Somnus", "Victoria", "Vertumnus", "Tellus", "Ops", "Orcus", "Nox" }
+  if os.getComputerLabel and os.setComputerLabel and os.getComputerID and not os.getComputerLabel() then
+    pcall(os.setComputerLabel, PLAN.label or GODS[os.getComputerID() % #GODS + 1])   -- the colony's name for it, else by id
+  end
+end
+
 local DX = { 0, 1, 0, -1, 0, 0 }
 local DZ = { 1, 0, -1, 0, 0, 0 }
 local DY = { 0, 0, 0, 0, 1, -1 }
@@ -411,10 +419,33 @@ end
 local SAPLING_SLOT, BONE_SLOT = 1, 2
 local cycle = 0
 
+local SAP = PLAN.sapling                -- the kind I plant; changes if I was given another kind of sapling
+
+local function isAnySapling(name)
+  return name ~= nil and (name:find("sapling", 1, true) ~= nil or name:find("propagule", 1, true) ~= nil)
+end
+
 local function isSapling(name)
   if not name then return false end
-  if PLAN.sapling == "any" then return name:find("sapling", 1, true) ~= nil or name:find("propagule", 1, true) ~= nil end
-  return name == PLAN.sapling
+  if SAP == "any" then return isAnySapling(name) end
+  return name == SAP
+end
+
+-- look through the whole inventory: if there are none of the chosen kind but there are saplings of another kind, plant those
+local function adoptSaplings()
+  local count, best = {}, nil
+  for s = 1, 16 do
+    local n = itemName(s)
+    if isAnySapling(n) then
+      count[n] = (count[n] or 0) + turtle.getItemCount(s)
+      if not best or count[n] > count[best] then best = n end
+    end
+  end
+  if SAP ~= "any" and (count[SAP] or 0) == 0 and best then
+    SAP = best
+    say(TITLE, "", "No " .. tostring(PLAN.sapling):gsub("minecraft:", "") .. " found.", "Planting " .. best:gsub("minecraft:", "") .. " instead.")
+    sleep(2)
+  end
 end
 
 -- move whatever is in slot `s` to another empty slot (false if there is none)
@@ -459,8 +490,12 @@ local function gatherSaplings()
   turtle.select(1)
 end
 
-local function saplingsLeft()
-  return isSapling(itemName(SAPLING_SLOT)) and turtle.getItemCount(SAPLING_SLOT) or 0
+local function saplingsLeft()                       -- every slot counts, not just slot 1
+  local n = 0
+  for s = 1, 16 do
+    if isSapling(itemName(s)) then n = n + turtle.getItemCount(s) end
+  end
+  return n
 end
 
 local function boneLeft()
@@ -496,6 +531,7 @@ local function chop()
 end
 
 local function plant()
+  if not isSapling(itemName(SAPLING_SLOT)) then gatherSaplings() end       -- slot 1 ran out: refill it from the other slots
   if saplingsLeft() == 0 then return false end
   turtle.select(SAPLING_SLOT)
   local ok = turtle.place()
@@ -561,7 +597,9 @@ local function unload()
   gatherSaplings()
   burn(500)
   local keep = {}
-  if isSapling(itemName(SAPLING_SLOT)) then keep[SAPLING_SLOT] = true end
+  for s = 1, 16 do
+    if isSapling(itemName(s)) then keep[s] = true end                       -- never drop saplings into the chest
+  end
   if PLAN.bonemeal and has(itemName(BONE_SLOT), "bone_meal") then keep[BONE_SLOT] = true end
   if PLAN.chest then
     turnTo(3)
@@ -630,7 +668,16 @@ local function main()
   end
   installStartup()
   if PLAN.chest then ensureChest(3, "logs"); turnTo(1) end      -- place my own chest behind the start if there is none
+  adoptSaplings()
   gatherSaplings()
+  if args[1] ~= "resume" then
+    while saplingsLeft() == 0 do
+      say(TITLE, "", "No saplings in my inventory.", "Put some in (any slot). Waiting...")
+      sleep(5)
+      adoptSaplings()
+    end
+    gatherSaplings()
+  end
   while true do
     local st = pass()
     cycle = cycle + 1
