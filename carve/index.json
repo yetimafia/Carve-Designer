@@ -31,6 +31,14 @@
    ]
   },
   {
+   "name": "Hauler",
+   "slug": "hauler",
+   "file": "programs/hauler.lua",
+   "auto": "auto/hauler.json",
+   "kind": "hauler",
+   "updated": "2026-10-28T09:59:29Z"
+  },
+  {
    "name": "Smelter",
    "slug": "smelter",
    "file": "programs/smelter.lua",
