@@ -801,19 +801,94 @@ local function canBlock(n)
       end
     end
   end
-  return count == want
+  if count ~= want then return false end
+  -- ...and the turtle must still be able to walk to every cell it has already dug out
+  local open = 0
+  for i in pairs(job.mined) do
+    if not job.placed[i] and i ~= n then open = open + 1 end
+  end
+  seen = { [start] = true }
+  qx, qy, qz, head, tail, count = { job.tx }, { job.ty }, { job.tz }, 1, 1, 1
+  while head <= tail do
+    local x, y, z = qx[head], qy[head], qz[head]
+    head = head + 1
+    for d = 1, 6 do
+      local nx, ny, nz = x + DX[d], y + DY[d], z + DZ[d]
+      if inside(nx, ny, nz) then
+        local m = idx(nx, ny, nz)
+        if not seen[m] and m ~= n and job.mined[m] and not job.placed[m] then
+          seen[m] = true
+          count = count + 1
+          tail = tail + 1
+          qx[tail], qy[tail], qz[tail] = nx, ny, nz
+        end
+      end
+    end
+  end
+  return count == open
 end
 
--- called right after cell n (in direction d) was dug: torches go in at once when that's safe
-local function afterDig(n, d)
-  if job.torches == "end" then return end
+-- Torches are dropped straight down onto the floor from the cell above (placeDown), so they
+-- stand on a block that stays put instead of hanging on the side of one the turtle will break.
+local digCell
+local torchCells = {}                 -- every torch cell of the job, in cell order
+local pdefer = {}                     -- torches that would have cut off work: they wait for the end
+local dry = {}                        -- torch slots found empty during the dig
+
+local function buildTorchList()
+  torchCells = {}
+  for n, slot in pairs(job.place) do
+    if isTorchSlot(slot) then torchCells[#torchCells + 1] = n end
+  end
+  table.sort(torchCells)
+  pdefer, dry = {}, {}
+end
+
+local function torchSpot(n)           -- the cell the turtle stands in to drop torch n down
+  local x, y, z = cellOf(n)
+  if inside(x, y + 1, z) then return idx(x, y + 1, z) end
+  return nil
+end
+
+-- is there (or will there be, once its block is in) something solid under torch cell n?
+local function supportReady(n)
+  local x, y, z = cellOf(n)
+  if not inside(x, y - 1, z) then return true end
+  local b = idx(x, y - 1, z)
+  if not job.sel[b] or job.blocked[b] then return true end
+  local s = job.place[b]
+  if s and not isTorchSlot(s) then return job.placed[b] == true end
+  return false
+end
+
+local function supplyOk(slot)
+  if dry[slot] then return false end
+  if supplySlot(slot) then return true end
+  dry[slot] = true
+  return false
+end
+
+-- could torch n go in during the dig? (its cell is dug or will be dug, its floor is solid, one is on board)
+local function torchReady(n)
   local slot = job.place[n]
-  if not slot or job.placed[n] or job.pfail[n] or not isTorchSlot(slot) then return end
-  if not canBlock(n) then return end
-  local r = placeInto(d, slot, true)
-  if r == true then
+  return not job.placed[n] and not job.pfail[n] and not pdefer[n] and not job.blocked[n]
+    and job.sel[n] ~= nil and supportReady(n) and supplyOk(slot)
+end
+
+-- stand above torch cell n, dig it out if it is still stone, and drop the torch in
+local function putTorch(n)
+  local a = torchSpot(n)
+  local ax, ay, az = cellOf(a)
+  goTo(ax, ay, az)
+  if job.sel[n] and not job.mined[n] and not job.blocked[n] then digCell(n, 6) end
+  if not job.mined[n] then return end
+  if not canBlock(n) then
+    pdefer[n] = true
+    return
+  end
+  if placeInto(6, job.place[n]) then
     markPlaced(n)
-  elseif r == false then
+  else
     job.pfail[n] = true
     stats.pfail = stats.pfail + 1
   end
@@ -821,14 +896,13 @@ end
 
 ---------------------------------------------------------------- digging routines
 -- dig the cell n lying in direction d from where the turtle stands
-local function digCell(n, d)
+digCell = function(n, d)
   if freeSlots() < 2 then dumpTrip() end
   if clearDir(d) then
     job.mined[n] = true
     stats.mined = stats.mined + 1
     if live.on then live.cells[#live.cells + 1] = n end
     frontierAdd(n)
-    afterDig(n, d)
     return true
   end
   job.blocked[n] = true
@@ -883,10 +957,21 @@ local function digTarget(t)
   return nil
 end
 
--- "torches first": tunnel to the nearest torch spot, put the torch in, repeat
+-- "torches first": tunnel to the cell above the nearest torch spot, put the torch in, repeat
 local mission = nil
 
 local function findMission()
+  local spotOf, any = {}, false
+  for _, n in ipairs(torchCells) do
+    if torchReady(n) then
+      local a = torchSpot(n)
+      if a and (job.mined[a] or wanted(a)) and not job.placed[a] then
+        spotOf[a] = n
+        any = true
+      end
+    end
+  end
+  if not any then return nil end
   local total = job.w * job.d * job.h
   local par, queue, head, tail = {}, {}, 1, 0
   for i = 1, total do
@@ -894,6 +979,7 @@ local function findMission()
       par[i] = false
       tail = tail + 1
       queue[tail] = i
+      if spotOf[i] then return { path = {}, n = spotOf[i] } end
     end
   end
   while head <= tail do
@@ -906,8 +992,7 @@ local function findMission()
         local n = idx(nx, ny, nz)
         if par[n] == nil and wanted(n) then
           par[n] = c
-          local slot = job.place[n]
-          if slot and isTorchSlot(slot) and not job.pfail[n] and supplySlot(slot) then
+          if spotOf[n] then
             local rev, cur = {}, n
             while par[cur] do
               rev[#rev + 1] = cur
@@ -915,7 +1000,7 @@ local function findMission()
             end
             local path = {}
             for k = #rev, 1, -1 do path[#path + 1] = rev[k] end
-            return path
+            return { path = path, n = spotOf[n] }
           end
           tail = tail + 1
           queue[tail] = n
@@ -927,19 +1012,54 @@ local function findMission()
 end
 
 local function missionStep()
-  if job.torches ~= "first" or next(job.place) == nil then return false end
+  if job.torches ~= "first" or #torchCells == 0 then return false end
   if mission then
-    while #mission > 0 and not wanted(mission[1]) do table.remove(mission, 1) end
-    if #mission == 0 then mission = nil end
+    while #mission.path > 0 and not wanted(mission.path[1]) do table.remove(mission.path, 1) end
+    if not torchReady(mission.n) then mission = nil end
   end
   if not mission then mission = findMission() end
   if not mission then return false end
-  if digTarget(mission[1]) == nil then
+  if #mission.path > 0 then
+    if digTarget(mission.path[1]) == nil then
+      mission = nil
+      return false
+    end
+  else
+    local n = mission.n
     mission = nil
-    return false
+    local a = torchSpot(n)
+    if job.mined[a] and not job.placed[a] then
+      putTorch(n)
+    else                                    -- the standing cell turned out to be unbreakable
+      job.pfail[n] = true
+      stats.pfail = stats.pfail + 1
+    end
   end
   saveMined()
   status("Mining...")
+  return true
+end
+
+-- "as soon as their cell is dug": a torch whose cell and standing cell are both open goes in now
+local function readyStep()
+  if job.torches ~= "early" or #torchCells == 0 then return false end
+  local spots, any = {}, false
+  for _, n in ipairs(torchCells) do
+    if job.mined[n] and not job.placed[n] and not job.pfail[n] and not pdefer[n] and supportReady(n) then
+      local a = torchSpot(n)
+      if a and job.mined[a] and not job.placed[a] and supplyOk(job.place[n]) then
+        spots[a] = n
+        any = true
+      end
+    end
+  end
+  if not any then return false end
+  local path = bfs(pos.x, pos.y, pos.z, function(x, y, z) return spots[idx(x, y, z)] ~= nil end)
+  if not path then return false end
+  for _, d in ipairs(path) do stepTo(d) end
+  putTorch(spots[idx(pos.x, pos.y, pos.z)])
+  saveMined()
+  status("Placing torches...")
   return true
 end
 
@@ -965,10 +1085,11 @@ end
 
 local function digAll()
   frontierBuild()
+  buildTorchList()
   mission = nil
   local ordered = job.pattern ~= "nearest"
   while true do
-    if not missionStep() then
+    if not missionStep() and not readyStep() then
       if ordered then
         if not orderedStep() then break end
       else
@@ -986,11 +1107,13 @@ end
 -- seals itself in: whatever it needs to walk over to get home is nearer than the cell it fills.
 local function placePhase()
   if next(job.place) == nil then return end
+  if #torchCells == 0 then buildTorchList() end
   local start = idx(job.tx, job.ty, job.tz)
   local dist = distances()
   local list = {}
   for n in pairs(job.place) do
-    if job.mined[n] and n ~= start and dist[n] and not job.placed[n] and job.inv[job.place[n]] then
+    if job.mined[n] and n ~= start and dist[n] and not job.placed[n] and job.inv[job.place[n]]
+       and not isTorchSlot(job.place[n]) then
       list[#list + 1] = n
     end
   end
@@ -1019,6 +1142,38 @@ local function placePhase()
         end
         status("Placing...")
       end
+    end
+  end
+end
+
+-- Last of all: torches that could not go in earlier (their floor block had to be placed first).
+local function torchPhase()
+  if #torchCells == 0 then return end
+  local dist = distances()
+  local list = {}
+  for _, n in ipairs(torchCells) do
+    local a = torchSpot(n)
+    if a and job.mined[n] and not job.placed[n] and not job.pfail[n] and supportReady(n) and dist[a] then
+      list[#list + 1] = n
+    end
+  end
+  table.sort(list, function(p, q)
+    local dp, dq = dist[torchSpot(p)], dist[torchSpot(q)]
+    if dp ~= dq then return dp > dq end
+    return p < q
+  end)
+  for _, n in ipairs(list) do
+    local ax, ay, az = cellOf(torchSpot(n))
+    local path = bfs(pos.x, pos.y, pos.z, function(x, y, z) return x == ax and y == ay and z == az end)
+    if path then
+      for _, d in ipairs(path) do stepTo(d) end
+      if placeInto(6, job.place[n]) then
+        markPlaced(n)
+      else
+        job.pfail[n] = true
+        stats.pfail = stats.pfail + 1
+      end
+      status("Placing torches...")
     end
   end
 end
@@ -1054,9 +1209,13 @@ local function runJob()
   liveStart()
   digAll()
   placePhase()
-  goTo(job.tx, job.ty, job.tz)
-  if job.chest then dumpAtHome() end
-  turnTo(1)
+  torchPhase()
+  local home = bfs(pos.x, pos.y, pos.z, function(x, y, z) return x == job.tx and y == job.ty and z == job.tz end)
+  if home then
+    for _, d in ipairs(home) do stepTo(d) end
+    if job.chest then dumpAtHome() end
+    turnTo(1)
+  end
   finish()
 end
 
