@@ -1,6 +1,7 @@
 {
  "kind": "keeper",
  "name": "Storage keeper",
+ "label": "Jupiter",
  "length": 8,
  "wait": 10,
  "rescan": 1800
