@@ -29,6 +29,22 @@
     2,
     9
    ]
+  },
+  {
+   "name": "Tree farm",
+   "slug": "tree_farm",
+   "file": "programs/tree_farm.lua",
+   "auto": "auto/tree_farm.json",
+   "kind": "treefarm",
+   "updated": "2026-10-28T09:59:09Z",
+   "foot": [
+    -3,
+    -1,
+    -2,
+    14,
+    9,
+    14
+   ]
   }
  ]
 }
