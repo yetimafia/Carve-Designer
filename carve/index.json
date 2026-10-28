@@ -15,6 +15,22 @@
    "updated": "2026-10-28T07:31:05Z"
   },
   {
+   "name": "Smelter",
+   "slug": "smelter",
+   "file": "programs/smelter.lua",
+   "auto": "auto/smelter.json",
+   "kind": "smelter",
+   "updated": "2026-10-28T09:59:15Z",
+   "foot": [
+    -2,
+    -1,
+    -2,
+    5,
+    2,
+    4
+   ]
+  },
+  {
    "name": "Storage keeper",
    "slug": "storage_keeper",
    "file": "programs/storage_keeper.lua",
