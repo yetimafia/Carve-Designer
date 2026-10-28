@@ -39,6 +39,14 @@
    "updated": "2026-10-28T10:29:19Z"
   },
   {
+   "name": "Scout",
+   "slug": "scout",
+   "file": "programs/scout.lua",
+   "auto": "auto/scout.json",
+   "kind": "scout",
+   "updated": "2026-10-28T11:05:18Z"
+  },
+  {
    "name": "Smelter",
    "slug": "smelter",
    "file": "programs/smelter.lua",
