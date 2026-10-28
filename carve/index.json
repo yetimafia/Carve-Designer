@@ -13,6 +13,22 @@
    ],
    "blocks": 1247,
    "updated": "2026-10-28T07:31:05Z"
+  },
+  {
+   "name": "Storage keeper",
+   "slug": "storage_keeper",
+   "file": "programs/storage_keeper.lua",
+   "auto": "auto/storage_keeper.json",
+   "kind": "keeper",
+   "updated": "2026-10-28T09:59:00Z",
+   "foot": [
+    -2,
+    -1,
+    -2,
+    2,
+    2,
+    9
+   ]
   }
  ]
 }
