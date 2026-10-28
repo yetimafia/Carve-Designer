@@ -1,6 +1,7 @@
 {
  "kind": "crafter",
  "name": "Compressor",
+ "label": "Minerva",
  "grid": [
   "minecraft:charcoal",
   "minecraft:charcoal",
