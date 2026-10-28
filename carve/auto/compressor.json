@@ -1,0 +1,18 @@
+{
+ "kind": "crafter",
+ "name": "Compressor",
+ "grid": [
+  "minecraft:charcoal",
+  "minecraft:charcoal",
+  "minecraft:charcoal",
+  "minecraft:charcoal",
+  "minecraft:charcoal",
+  "minecraft:charcoal",
+  "minecraft:charcoal",
+  "minecraft:charcoal",
+  "minecraft:charcoal"
+ ],
+ "out": "",
+ "total": 0,
+ "once": false
+}
