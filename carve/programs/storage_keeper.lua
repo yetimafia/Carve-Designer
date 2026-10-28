@@ -12,7 +12,7 @@
 
 local args = { ... }
 
-local PLAN = {kind = "keeper", length = 8, live = "http://127.0.0.1:8765", name = "Storage keeper", rescan = 1800, wait = 10}
+local PLAN = {kind = "keeper", label = "Jupiter", length = 8, live = "http://127.0.0.1:8765", name = "Storage keeper", rescan = 1800, wait = 10}
 
 local STATE_FILE = "carve.keeper"
 local INDEX_FILE = "carve.keeperidx"
@@ -23,6 +23,14 @@ local KEEP = {}
 
 ---------------------------------------------------------------- shared helpers (position, moving, fuel)
 -- directions: 1 = +z (forward at start), 2 = +x (right), 3 = -z (back), 4 = -x (left), 5 = up, 6 = down
+-- every turtle names itself after a Roman god (by its id) the first time it starts, if it has no label yet
+do
+  local GODS = { "Jupiter", "Juno", "Neptune", "Minerva", "Mars", "Venus", "Apollo", "Diana", "Vulcan", "Vesta", "Mercury", "Ceres", "Bacchus", "Pluto", "Saturn", "Janus", "Aurora", "Bellona", "Cupid", "Faunus", "Flora", "Fortuna", "Juventas", "Luna", "Sol", "Terra", "Pomona", "Proserpina", "Quirinus", "Somnus", "Victoria", "Vertumnus", "Tellus", "Ops", "Orcus", "Nox" }
+  if os.getComputerLabel and os.setComputerLabel and os.getComputerID and not os.getComputerLabel() then
+    pcall(os.setComputerLabel, PLAN.label or GODS[os.getComputerID() % #GODS + 1])   -- the colony's name for it, else by id
+  end
+end
+
 local DX = { 0, 1, 0, -1, 0, 0 }
 local DZ = { 1, 0, -1, 0, 0, 0 }
 local DY = { 0, 0, 0, 0, 1, -1 }
