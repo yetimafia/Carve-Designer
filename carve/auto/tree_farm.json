@@ -1,0 +1,12 @@
+{
+ "kind": "treefarm",
+ "name": "Tree farm",
+ "cols": 3,
+ "rows": 3,
+ "spacing": 4,
+ "sapling": "minecraft:oak_sapling",
+ "bonemeal": false,
+ "wait": 600,
+ "cycles": 0,
+ "chest": true
+}
