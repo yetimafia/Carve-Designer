@@ -15,6 +15,22 @@
    "updated": "2026-10-28T07:31:05Z"
   },
   {
+   "name": "Compressor",
+   "slug": "compressor",
+   "file": "programs/compressor.lua",
+   "auto": "auto/compressor.json",
+   "kind": "crafter",
+   "updated": "2026-10-28T09:59:22Z",
+   "foot": [
+    -2,
+    -1,
+    -2,
+    2,
+    2,
+    2
+   ]
+  },
+  {
    "name": "Smelter",
    "slug": "smelter",
    "file": "programs/smelter.lua",
