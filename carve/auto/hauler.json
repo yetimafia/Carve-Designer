@@ -1,6 +1,7 @@
 {
  "kind": "hauler",
  "name": "Hauler",
+ "label": "Mars",
  "legs": [
   {
    "from": "Tree farm",
