@@ -1,0 +1,8 @@
+{
+ "kind": "scout",
+ "name": "Scout",
+ "label": "Venus",
+ "radius": 24,
+ "up": 8,
+ "down": 4
+}
