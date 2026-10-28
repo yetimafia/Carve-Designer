@@ -1,0 +1,7 @@
+{
+ "kind": "smelter",
+ "name": "Smelter",
+ "furnaces": 4,
+ "fuel": "minecraft:coal",
+ "once": false
+}
