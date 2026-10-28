@@ -1,3 +1,4 @@
+-- built by Carve Designer v4.3
 -- Carve scout: walks (and flies) through open space, looks at every block around it and reports what it
 -- sees to the Designer's Fleet map. It never digs, never places and never enters water or lava.
 -- Stand on the START cell facing forward (+z). It explores within PLAN.radius blocks of the start and from
@@ -73,12 +74,21 @@ end
 -- Tells the Carve Designer what this turtle is doing (name, place, fuel, message) every few seconds and
 -- obeys a "stop" from its Fleet page. If the app isn't there nothing breaks.
 local LIVE_URL = PLAN.live or ""
-local fleet = { on = LIVE_URL ~= "" and http ~= nil and http.post ~= nil, last = -100, fails = 0,
+local fleet = { on = LIVE_URL ~= "" and http ~= nil and http.post ~= nil, last = -100, fails = 0, retryAt = 0, status = "",
                 done = false, msg = "", seq = 0, n = 0, total = 0, cmd = nil, arg = "", world = nil, peers = {},
                 run = os.epoch and math.floor(os.epoch("utc") / 1000) or 0,
                 gpsLast = -100, gpsFails = 0, gpsOk = false, gpsDead = false }
 for _, a in ipairs(args) do
   if a == "nolive" then fleet.on = false end
+end
+if LIVE_URL == "" then
+  fleet.status = "live reporting is OFF (uploaded without it)"
+elseif not (http and http.post) then
+  fleet.status = "the http API is off on this computer"
+elseif fleet.on then
+  fleet.status = "connecting to " .. LIVE_URL
+else
+  fleet.status = "live reporting switched off (nolive)"
 end
 
 local function jq(s)
@@ -123,6 +133,7 @@ end
 local function fleetSend(force)
   if not fleet.on then return end
   local now = os.clock()
+  if now < fleet.retryAt then return end
   if not force and now - fleet.last < 3 then return end
   fleet.last = now
   fleet.seq = fleet.seq + 1
@@ -137,16 +148,19 @@ local function fleetSend(force)
   local fix = gpsFix(now)
   if fix then body = body .. ',"gps":[' .. fix[1] .. "," .. fix[2] .. "," .. fix[3] .. "]" end
   body = body .. "}"
-  local ok, res = pcall(http.post, { url = LIVE_URL .. "/status", body = body, timeout = 5,
-                                     headers = { ["Content-Type"] = "application/json" } })
+  local ok, res, err = pcall(http.post, { url = LIVE_URL .. "/status", body = body, timeout = 5,
+                                          headers = { ["Content-Type"] = "application/json" } })
   if ok and res then
     fleet.fails = 0
+    fleet.status = "reporting OK to " .. LIVE_URL
     local reply = ""
     pcall(function() reply = res.readAll() or ""; res.close() end)
     handleReply(reply)
   else
     fleet.fails = fleet.fails + 1
-    if fleet.fails >= 5 then fleet.on = false end
+    local why = tostring(ok and err or res or "no answer"):gsub("%s+", " ")
+    fleet.status = "NOT reaching " .. LIVE_URL .. ": " .. why
+    if fleet.fails >= 5 then fleet.retryAt = os.clock() + 30 end            -- keep trying every 30 s: the app may simply not be listening yet
   end
 end
 
@@ -165,8 +179,12 @@ local function say(...)
   end
   fleet.msg = table.concat(parts, " ")
   fleetSend(false)
-  local _, h = term.getSize()
-  if fleet.world and #lines + 3 <= h then
+  local w, h = term.getSize()
+  if fleet.status ~= "" and h > #lines + 1 then
+    term.setCursorPos(1, h)
+    term.write(("App: " .. fleet.status):sub(1, w))
+  end
+  if fleet.world and #lines + 3 <= h - 1 then
     term.setCursorPos(1, #lines + 2)
     term.write("World " .. fleet.world[1] .. " " .. fleet.world[2] .. " " .. fleet.world[3])
     local n = fleet.peers[1]
