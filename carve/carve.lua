@@ -5,16 +5,60 @@
 --   carve <name> nochest   anything after the name is passed to the program
 --   carve list             just show the list
 --   carve resume           carry on with the job that was interrupted
+--   carve ping [address]  check that this turtle can reach the Designer app (for live reporting)
 --   carve start <id> <name>   tell another turtle (running the "agent" program) to start a program
 --
 -- Every run downloads the newest version, so after you upload a changed design
 -- from the designer you don't need to do anything else on the turtle.
+
+-- every turtle names itself after a Roman god (by its id) the first time it starts, if it has no label yet
+do
+  local GODS = { "Jupiter", "Juno", "Neptune", "Minerva", "Mars", "Venus", "Apollo", "Diana", "Vulcan", "Vesta", "Mercury", "Ceres", "Bacchus", "Pluto", "Saturn", "Janus", "Aurora", "Bellona", "Cupid", "Faunus", "Flora", "Fortuna", "Juventas", "Luna", "Sol", "Terra", "Pomona", "Proserpina", "Quirinus", "Somnus", "Victoria", "Vertumnus", "Tellus", "Ops", "Orcus", "Nox" }
+  if os.getComputerLabel and os.setComputerLabel and os.getComputerID and not os.getComputerLabel() then
+    pcall(os.setComputerLabel, GODS[os.getComputerID() % #GODS + 1])
+  end
+end
 
 local BASE = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve"
 local args = { ... }
 
 if not http then
   error("HTTP is turned off on this computer/server, so I can't reach GitHub.", 0)
+end
+
+if args[1] == "ping" then
+  local url = args[2]
+  if not url then
+    local f = fs.open("carve.live", "r")
+    url = f and f.readAll() or nil
+    if f then f.close() end
+  end
+  if not url or url == "" then
+    print("Use:  carve ping http://<address of the Designer>:8765")
+    return
+  end
+  url = url:gsub("/+$", "")
+  print("Trying " .. url .. " ...")
+  local h, err = http.get(url .. "/")
+  if h then
+    h.close()
+    print("OK: the Designer answered. Programs on this turtle can report to it.")
+    return
+  end
+  err = tostring(err)
+  print("Failed: " .. err)
+  local low = err:lower()
+  if low:find("not permitted", 1, true) or low:find("blocked", 1, true) or low:find("denied", 1, true) then
+    print("Minecraft blocks that address. In computercraft-server.toml set the")
+    print("\"$private\" http rule to allow (or add the address), then restart the world/server.")
+  elseif low:find("refused", 1, true) or low:find("connect", 1, true) or low:find("timed out", 1, true) or low:find("timeout", 1, true) then
+    print("Nothing answered. Is 'Start listening' on in the Designer? Is the address the PC's")
+    print("network address (not 127.0.0.1) if this turtle is on a server or another computer?")
+    print("Tick 'Accept turtles from other computers' and allow the firewall prompt.")
+  else
+    print("Check the address: http://<PC address>:8765")
+  end
+  return
 end
 
 if args[1] == "start" then
