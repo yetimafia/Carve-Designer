@@ -4,6 +4,8 @@
 --   carve <name>           download and run one directly   (name = its short name)
 --   carve <name> nochest   anything after the name is passed to the program
 --   carve list             just show the list
+--   carve resume           carry on with the job that was interrupted
+--   carve start <id> <name>   tell another turtle (running the "agent" program) to start a program
 --
 -- Every run downloads the newest version, so after you upload a changed design
 -- from the designer you don't need to do anything else on the turtle.
@@ -13,6 +15,28 @@ local args = { ... }
 
 if not http then
   error("HTTP is turned off on this computer/server, so I can't reach GitHub.", 0)
+end
+
+if args[1] == "start" then
+  local id, slug = tonumber(args[2]), args[3]
+  if not id or not slug or not slug:match("^[%w_%-]+$") then
+    print("Use:  carve start <turtle id> <program>")
+    return
+  end
+  local f = fs.open("carve.live", "r")
+  local url = f and f.readAll() or ""
+  if f then f.close() end
+  if url == "" then
+    error("I don't know where the Designer app is yet. Run any program with live reporting on this turtle once.", 0)
+  end
+  local h, err = http.post(url .. "/cmd", textutils.serialiseJSON({ id = id, cmd = "run", arg = slug }))
+  if h then
+    h.close()
+    print("Asked turtle " .. id .. " to start " .. slug .. ".")
+  else
+    print("Not accepted (" .. tostring(err) .. "). Is turtle " .. id .. " running the agent program?")
+  end
+  return
 end
 
 local function fetch(path)
@@ -58,6 +82,8 @@ local function run(p, extra)
   f.write(body)
   f.close()
   print("Downloaded " .. localName .. " (" .. #body .. " bytes)")
+  local lf = fs.open("carve.last", "w")
+  if lf then lf.write(p.slug); lf.close() end
   shell.run(localName, table.unpack(extra))
 end
 
@@ -80,6 +106,26 @@ if args[1] == "list" then
   return
 end
 
+local function lastSlug()
+  if not (fs.exists("carve.job") and fs.exists("carve.last")) then return nil end
+  local f = fs.open("carve.last", "r")
+  if not f then return nil end
+  local slug = f.readAll()
+  f.close()
+  return slug
+end
+
+if args[1] == "resume" then
+  local slug = lastSlug()
+  local p = slug and find(slug)
+  if not p then
+    print("Nothing to resume here.")
+    return
+  end
+  run(p, { "resume" })
+  return
+end
+
 if args[1] and args[1] ~= "" then
   local p = find(args[1])
   if not p then error("No program called '" .. args[1] .. "'. Try: carve list", 0) end
@@ -99,10 +145,17 @@ while true do
     print(i .. ") " .. describe(list[i]))
   end
   print("")
+  local pending = lastSlug()
+  if pending and find(pending) then print("r = resume the unfinished " .. pending .. " job") end
   write("Number" .. (pages > 1 and ", n/p = page" or "") .. ", q = quit: ")
   local answer = read()
   local n = tonumber(answer)
   if answer == "q" or answer == "Q" then
+    return
+  elseif (answer == "r" or answer == "R") and pending and find(pending) then
+    term.clear()
+    term.setCursorPos(1, 1)
+    run(find(pending), { "resume" })
     return
   elseif answer == "n" and page < pages then
     page = page + 1
