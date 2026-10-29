@@ -1,4 +1,4 @@
--- built by Carve Designer v4.7
+-- built by Carve Designer v4.9
 -- Carve tree farm: plants saplings on a grid, waits (or uses bone meal), chops the trees,
 -- replants and keeps the logs in the chest behind the start. Stop it with Ctrl+T; it resumes by itself.
 -- Setup: flat ground (dirt or grass) with free space. Stand on the START cell facing the first row.
@@ -7,7 +7,7 @@
 
 local args = { ... }
 
-local PLAN = {bonemeal = false, chest = true, cols = 3, cycles = 0, kind = "treefarm", label = "Juno", live = "http://127.0.0.1:8765", name = "Tree farm", rows = 3, sapling = "minecraft:oak_sapling", spacing = 4, wait = 600}
+local PLAN = {bonemeal = false, chest = true, cols = 2, cycles = 0, kind = "treefarm", label = "Juno", live = "http://127.0.0.1:8765", name = "Tree farm", rows = 2, sapling = "minecraft:oak_sapling", spacing = 4, wait = 60}
 
 local STATE_FILE = "carve.farm"
 local TITLE = PLAN.name or "Tree farm"
