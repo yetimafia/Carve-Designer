@@ -1,4 +1,4 @@
--- built by Carve Designer v4.9
+-- built by Carve Designer v5.2
 -- Carve hauler: carries items between the chests of your other jobs. Each leg says where to take items from
 -- (a job's output chest), where to put them (another job's input chest) and which items (part of a name, e.g. "log").
 -- It asks the Designer app where those chests are, walks there (climbing over what is in the way, never digging),
@@ -113,6 +113,61 @@ local function gpsFix(now)
   if fleet.gpsFails >= 2 and not fleet.gpsOk then fleet.gpsDead = true end
 end
 
+-- ---- shared map: every program tells the app what it sees on its way (scouts do it themselves)
+local MAP_SHARE = fleet.on and PLAN.kind ~= "scout" and PLAN.map ~= false
+local mapSeen, mapCount, mapOut, mapMoves, mapLast = {}, 0, {}, 0, 0
+local function mapNote(x, y, z, name)
+  local k = ((x + 512) * 1024 + (z + 512)) * 1024 + (y + 512)
+  local old = mapSeen[k]
+  if old == name then return end
+  if old == nil then
+    if mapCount >= 8000 then return end
+    mapCount = mapCount + 1
+  end
+  mapSeen[k] = name
+  mapOut[#mapOut + 1] = { x, y, z, name }
+  if #mapOut > 1500 then table.remove(mapOut, 1) end
+end
+local function mapInspect(fn)
+  local found, data = fn()
+  if not found then return "air" end
+  return type(data) == "table" and data.name or "unknown"
+end
+-- called after every move: my own cell is free, and the cell I face (and now and then above and below) is whatever it is
+local function mapSee()
+  if not MAP_SHARE then return end
+  mapNote(pos.x, pos.y, pos.z, "air")
+  mapMoves = mapMoves + 1
+  local n = mapInspect(turtle.inspect)
+  if n then mapNote(pos.x + DX[face], pos.y, pos.z + DZ[face], n) end
+  if mapMoves % 4 == 0 then
+    n = mapInspect(turtle.inspectUp); if n then mapNote(pos.x, pos.y + 1, pos.z, n) end
+    n = mapInspect(turtle.inspectDown); if n then mapNote(pos.x, pos.y - 1, pos.z, n) end
+  end
+end
+local function mapFlush(force)
+  if not MAP_SHARE or #mapOut == 0 then return end
+  local now = os.clock()
+  if not force and #mapOut < 30 and now - mapLast < 10 then return end
+  mapLast = now
+  while #mapOut > 0 do
+    local parts, sent = {}, {}
+    for i = 1, math.min(#mapOut, 300) do
+      local c = table.remove(mapOut)
+      sent[#sent + 1] = c
+      parts[#parts + 1] = "[" .. c[1] .. "," .. c[2] .. "," .. c[3] .. "," .. jq(c[4]) .. "]"
+    end
+    local ok, res = pcall(http.post, { url = LIVE_URL .. "/map", timeout = 5, headers = { ["Content-Type"] = "application/json" },
+      body = '{"v":1,"id":' .. os.getComputerID() .. ',"cells":[' .. table.concat(parts, ",") .. "]}" })
+    if ok and res then
+      pcall(function() res.readAll(); res.close() end)
+    else
+      for _, c in ipairs(sent) do mapOut[#mapOut + 1] = c end
+      break
+    end
+  end
+end
+
 -- what the app answered: "ok [command [argument]]", then "me x y z" (world position) and "peer id name x y z" lines
 local function handleReply(reply)
   local cmd, arg = reply:match("^ok (%a+) ?([%w_%-]*)")
@@ -159,6 +214,7 @@ local function fleetSend(force)
     local reply = ""
     pcall(function() reply = res.readAll() or ""; res.close() end)
     handleReply(reply)
+    mapFlush(false)
   else
     fleet.fails = fleet.fails + 1
     local why = tostring(ok and err or res or "no answer"):gsub("%s+", " ")
@@ -204,6 +260,7 @@ local function finish(...)
   fleet.done = true
   say(...)
   fleetSend(true)
+  mapFlush(true)
 end
 
 -- run the program's main(); report errors / Ctrl+T / a Fleet "stop" before ending
@@ -307,6 +364,7 @@ local function step(d)
     if ok then
       pos.x, pos.y, pos.z = pos.x + DX[d], pos.y + DY[d], pos.z + DZ[d]
       savePos()
+      mapSee()
       return
     end
     tries = tries + 1
@@ -406,6 +464,7 @@ local function tryMove(d)
   if fn() then
     pos.x, pos.y, pos.z = pos.x + DX[d], pos.y + DY[d], pos.z + DZ[d]
     savePos()
+    mapSee()
     return true
   end
   return false
