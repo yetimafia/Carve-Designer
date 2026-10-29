@@ -1,4 +1,4 @@
--- built by Carve Designer v4.7
+-- built by Carve Designer v4.9
 -- Carve scout: walks (and flies) through open space, looks at every block around it and reports what it
 -- sees to the Designer's Fleet map. It never digs, never places and never enters water or lava.
 -- Stand on the START cell facing forward (+z). It explores within PLAN.radius blocks of the start and from
@@ -7,7 +7,7 @@
 
 local args = { ... }
 
-local PLAN = {down = 4, kind = "scout", label = "Venus", live = "http://127.0.0.1:8765", name = "Scout", radius = 24, up = 8}
+local PLAN = {down = 2, kind = "scout", label = "Venus", live = "http://127.0.0.1:8765", name = "Scout", radius = 8, up = 3}
 
 local STATE_FILE = "carve.scout"
 local TITLE = PLAN.name or "Scout"
