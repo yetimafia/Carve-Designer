@@ -1,7 +1,7 @@
 {
  "kind": "foreman",
  "name": "Foreman",
- "label": "Viscous",
+ "label": "Mirage",
  "jobs": [
   {
    "name": "Storage keeper",
@@ -116,6 +116,6 @@
  ],
  "dispatch": true,
  "build": true,
- "agent_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/programs/agent.lua",
+ "agent_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/002a18d76fa9ded6d3d22544dc8c9fd5d165bee3/carve/programs/agent.lua",
  "launcher_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua"
 }
