@@ -1,4 +1,4 @@
--- built by Carve Designer v5.7
+-- built by Carve Designer v5.9
 -- Carve tree farm: plants saplings on a grid, waits (or uses bone meal), chops the trees,
 -- replants and keeps the logs in the chest behind the start. Stop it with Ctrl+T; it resumes by itself.
 -- Setup: flat ground (dirt or grass) with free space. Stand on the START cell facing the first row.
@@ -17,9 +17,9 @@ local KEEP = {}
 
 ---------------------------------------------------------------- shared helpers (position, moving, fuel)
 -- directions: 1 = +z (forward at start), 2 = +x (right), 3 = -z (back), 4 = -x (left), 5 = up, 6 = down
--- every turtle names itself after a Roman god (by its id) the first time it starts, if it has no label yet
+-- every turtle names itself after a Deadlock hero (by its id) the first time it starts, if it has no label yet
 do
-  local GODS = { "Jupiter", "Juno", "Neptune", "Minerva", "Mars", "Venus", "Apollo", "Diana", "Vulcan", "Vesta", "Mercury", "Ceres", "Bacchus", "Pluto", "Saturn", "Janus", "Aurora", "Bellona", "Cupid", "Faunus", "Flora", "Fortuna", "Juventas", "Luna", "Sol", "Terra", "Pomona", "Proserpina", "Quirinus", "Somnus", "Victoria", "Vertumnus", "Tellus", "Ops", "Orcus", "Nox" }
+  local GODS = { "Abrams", "Bebop", "Dynamo", "Grey Talon", "Haze", "Infernus", "Ivy", "Kelvin", "Lady Geist", "Lash", "McGinnis", "Krill", "Paradox", "Pocket", "Seven", "Shiv", "Vindicta", "Viscous", "Warden", "Wraith", "Yamato", "Calico", "Holliday", "Vyper", "Sinclair", "Mirage", "Drifter", "Victor", "Paige", "Billy", "Rem", "Mo" }
   if os.getComputerLabel and os.setComputerLabel and os.getComputerID and not os.getComputerLabel() then
     pcall(os.setComputerLabel, PLAN.label or GODS[os.getComputerID() % #GODS + 1])   -- the colony's name for it, else by id
   end
