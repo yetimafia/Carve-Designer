@@ -2,7 +2,7 @@
  "kind": "keeper",
  "name": "Storage keeper",
  "label": "Jupiter",
- "length": 8,
- "wait": 10,
+ "length": 3,
+ "wait": 5,
  "rescan": 1800
 }
