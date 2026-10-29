@@ -1,4 +1,4 @@
--- built by Carve Designer v5.6
+-- built by Carve Designer v5.7
 -- Carve scout: walks (and flies) through open space, looks at every block around it and reports what it
 -- sees to the Designer's Fleet map. It never digs, never places and never enters water or lava.
 -- Stand on the START cell facing forward (+z). It explores within PLAN.radius blocks of the start and from
