@@ -1,4 +1,4 @@
--- built by Carve Designer v6.6
+-- built by Carve Designer v6.7
 -- Carve foreman: sets up the other turtles of the colony so you only have to start this one.
 --
 --   1. It asks the Designer app where every job's chests (and furnaces) belong, in this turtle's own frame.
@@ -12,7 +12,7 @@
 
 local args = { ... }
 
-local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Drifter", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
+local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/db50a053ee609f86ac4172a4bf1bf1ede915a106/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Ivy", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
 
 local STATE_FILE = "carve.foreman"
 local TITLE = PLAN.name or "Foreman"
@@ -211,6 +211,10 @@ local function fleetSend(force)
     '"done":' .. (fleet.done and "true" or "false"), '"run":' .. fleet.run }, ",")
   local fix = gpsFix(now)
   if fix then body = body .. ',"gps":[' .. fix[1] .. "," .. fix[2] .. "," .. fix[3] .. "]" end
+  if fleet.extra then                                          -- a program may add fields (the Foreman: inventory and crafting queue)
+    local okx, frag = pcall(fleet.extra)
+    if okx and type(frag) == "string" then body = body .. frag end
+  end
   body = body .. "}"
   local ok, res, err = pcall(http.post, { url = LIVE_URL .. "/status", body = body, timeout = 5,
                                           headers = { ["Content-Type"] = "application/json" } })
@@ -648,6 +652,33 @@ local function snapshot()
   return t
 end
 
+-- what the Fleet page's Foreman tab shows: my inventory and the crafting queue
+local crafting, recent, jobQ = {}, {}, {}                      -- tags being crafted (innermost last), finished ones, the turtles still to build
+local function pretty(nm) return (tostring(nm or ""):gsub("^%a+:", ""):gsub("_", " ")) end
+local function extraJson()
+  local inv = {}
+  for sl = 1, 16 do
+    local nm = turtle.getItemDetail and turtle.getItemDetail(sl)
+    nm = nm and nm.name
+    if nm then inv[#inv + 1] = "[" .. sl .. "," .. jq(nm) .. "," .. turtle.getItemCount(sl) .. "]" end
+  end
+  local q = {}
+  for i = #crafting, 1, -1 do
+    q[#q + 1] = '{"t":' .. jq("Craft " .. pretty(crafting[i])) .. ',"s":"' .. (i == #crafting and "now" or "wait") .. '"}'
+  end
+  for _, j in ipairs(jobQ) do
+    if j.s ~= "done" then q[#q + 1] = '{"t":' .. jq("Turtle for " .. j.name) .. ',"s":"' .. (#crafting == 0 and j.s == "now" and "now" or (j.s == "now" and "wait" or "todo")) .. '"}' end
+  end
+  for i = #recent, math.max(1, #recent - 5), -1 do
+    q[#q + 1] = '{"t":' .. jq("Crafted " .. pretty(recent[i])) .. ',"s":"done"}'
+  end
+  for _, j in ipairs(jobQ) do
+    if j.s == "done" then q[#q + 1] = '{"t":' .. jq("Turtle for " .. j.name) .. ',"s":"done"}' end
+  end
+  return ',"inv":[' .. table.concat(inv, ",") .. '],"q":[' .. table.concat(q, ",") .. "]"
+end
+fleet.extra = extraJson
+
 local STORE = { 4, 8, 12, 13, 14, 15 }                          -- slots outside the crafting grid, used to keep stock
 local hold = {}                                                -- tags the current recipe needs: never sent away to make room
 local ALWAYS = { "turtle", "drive", "disk" }                    -- never sent away: they are the point of all this
@@ -882,6 +913,8 @@ local function craftOnce(tag)
   for _, tok in ipairs(R[tag].rows) do
     for t in tok:gmatch("%S+") do if t ~= "-" then need[t] = (need[t] or 0) + 1 end end
   end
+  crafting[#crafting + 1] = tag
+  if fleetSend then fleetSend(false) end                      -- the Foreman tab shows what is being crafted
   local saved = hold
   hold = {}
   for t in pairs(saved) do hold[t] = true end                  -- what the outer recipe already gathered stays safe
@@ -896,6 +929,8 @@ local function craftOnce(tag)
   end
   local ok, why = craftRows(R[tag].rows)
   hold = saved
+  crafting[#crafting] = nil
+  if ok then recent[#recent + 1] = tag end
   if not ok then error("could not craft " .. tag .. ": " .. tostring(why), 0) end
 end
 
@@ -1099,8 +1134,11 @@ local function buildAll(problems)
     if j.kind ~= "agent" and j.kind ~= "foreman" then todo[#todo + 1] = j end
   end
   local made = 0
+  jobQ = {}
+  for _, j in ipairs(todo) do jobQ[#jobQ + 1] = { name = j.name, s = done[j.name] and "done" or "todo" } end
   for i, j in ipairs(todo) do
     fleet.n, fleet.total = i - 1, #todo
+    if jobQ[i] and jobQ[i].s ~= "done" then jobQ[i].s = "now" end
     if not done[j.name] then
       say(TITLE, "", "Building the turtle for " .. j.name, i .. " of " .. #todo)
       makeTurtle(j.crafty)
@@ -1140,6 +1178,7 @@ local function buildAll(problems)
       if not sent then return made end
       waitFor("for " .. j.name .. "'s turtle to leave", function() return not turtle.detect() end, 1200)
       markDone(j.name)
+      if jobQ[i] then jobQ[i].s = "done" end
       made = made + 1
     end
   end
