@@ -1,4 +1,4 @@
--- built by Carve Designer v4.7
+-- built by Carve Designer v4.9
 -- Carve storage keeper: a warehouse of chests that builds itself, remembers what is in every chest and
 -- reports the list to the Designer app (Storage tab of the Fleet page).
 --
@@ -13,7 +13,7 @@
 
 local args = { ... }
 
-local PLAN = {kind = "keeper", label = "Jupiter", length = 8, live = "http://127.0.0.1:8765", name = "Storage keeper", rescan = 1800, wait = 10}
+local PLAN = {kind = "keeper", label = "Jupiter", length = 3, live = "http://127.0.0.1:8765", name = "Storage keeper", rescan = 1800, wait = 5}
 
 local STATE_FILE = "carve.keeper"
 local INDEX_FILE = "carve.keeperidx"
