@@ -1,4 +1,4 @@
--- built by Carve Designer v5.9
+-- built by Carve Designer v6.0
 -- Carve foreman: sets up the other turtles of the colony so you only have to start this one.
 --
 --   1. It asks the Designer app where every job's chests (and furnaces) belong, in this turtle's own frame.
@@ -12,7 +12,7 @@
 
 local args = { ... }
 
-local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Calico", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
+local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/de983fb199c651e1cdfbedd5b8f5bd3421d5662c/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Shiv", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
 
 local STATE_FILE = "carve.foreman"
 local TITLE = PLAN.name or "Foreman"
@@ -747,7 +747,7 @@ local function craftFn()
 end
 
 -- lay the recipe out in the grid and craft once
-local function craftRowsInner(rows)
+local function craftRowsInner(rows, clean)
   local cells, want, names, targets = parseRows(rows), {}, {}, {}
   for i = 1, 9 do
     local t = cells[i]
@@ -759,6 +759,14 @@ local function craftRowsInner(rows)
       if not names[t] then return false, "no " .. t end
       want[i] = names[t]
       targets[GRID[i]] = true
+    end
+  end
+  if clean then                                                -- second try: only the recipe's own items stay in my inventory
+    local keep = {}
+    for _, nm in pairs(want) do keep[nm] = true end
+    for s = 1, 16 do
+      local nm = itemName(s)
+      if nm and not keep[nm] and not TAG.turtle(nm) and not TAG.drive(nm) and not TAG.disk(nm) then dropAway(s, 4) end
     end
   end
   for i = 1, 9 do
@@ -795,6 +803,7 @@ local function craftRowsInner(rows)
     ok, err = cf()
   end
   turtle.select(1)
+  if not ok and not clean then return craftRowsInner(rows, true) end
   if not ok then
     local seen = {}
     for i = 1, 9 do seen[i] = (itemName(GRID[i]) or "-"):gsub("^%a+:", "") .. "x" .. turtle.getItemCount(GRID[i]) end
@@ -847,7 +856,17 @@ ensureHave = function(tag, n)
     first = false
     if count(tag) >= n then break end
     if r then
-      craftOnce(tag)
+      local ok, e = pcall(craftOnce, tag)
+      if not ok then                                           -- this pack may not allow the recipe: ask for the finished item instead of crashing
+        e = tostring(e)
+        if e:find("Terminated") then error(e, 0) end
+        fetch(tag, n)
+        if count(tag) < n then
+          say(TITLE, "", "Can't craft " .. (WORDS[tag] or tag) .. " here:", e:gsub("^could not craft %w+: ", ""):sub(1, 40),
+            "Put " .. (n - count(tag)) .. " more " .. (WORDS[tag] or tag) .. " in the chest behind me.")
+          sleep(10)
+        end
+      end
     else
       fetch(tag, n)
       if count(tag) < n then
