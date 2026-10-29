@@ -1,0 +1,78 @@
+{
+ "kind": "foreman",
+ "name": "Foreman",
+ "label": "Apollo",
+ "jobs": [
+  {
+   "name": "Storage keeper",
+   "slug": "storage_keeper",
+   "kind": "keeper",
+   "furnaces": 0,
+   "foot": [
+    -2,
+    -1,
+    -2,
+    2,
+    2,
+    4
+   ]
+  },
+  {
+   "name": "Tree farm",
+   "slug": "tree_farm",
+   "kind": "treefarm",
+   "furnaces": 0,
+   "foot": [
+    -3,
+    -1,
+    -2,
+    10,
+    9,
+    10
+   ]
+  },
+  {
+   "name": "Smelter",
+   "slug": "smelter",
+   "kind": "smelter",
+   "furnaces": 2,
+   "foot": [
+    -2,
+    -1,
+    -2,
+    3,
+    2,
+    4
+   ]
+  },
+  {
+   "name": "Compressor",
+   "slug": "compressor",
+   "kind": "crafter",
+   "furnaces": 0,
+   "foot": [
+    -2,
+    -1,
+    -2,
+    2,
+    2,
+    2
+   ]
+  },
+  {
+   "name": "Hauler",
+   "slug": "hauler",
+   "kind": "hauler",
+   "furnaces": 0,
+   "foot": null
+  },
+  {
+   "name": "Scout",
+   "slug": "scout",
+   "kind": "scout",
+   "furnaces": 0,
+   "foot": null
+  }
+ ],
+ "dispatch": true
+}
