@@ -1,4 +1,4 @@
--- built by Carve Designer v6.9
+-- built by Carve Designer v7.0
 -- Carve foreman: sets up the other turtles of the colony so you only have to start this one.
 --
 --   1. It asks the Designer app where every job's chests (and furnaces) belong, in this turtle's own frame.
@@ -12,7 +12,7 @@
 
 local args = { ... }
 
-local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/9eac8b630f63e67151efd84453070f5d5fd2d393/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Abrams", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
+local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/9013337a5e67463216d049632b16efe8e076b385/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Pocket", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
 
 local STATE_FILE = "carve.foreman"
 local TITLE = PLAN.name or "Foreman"
@@ -1032,16 +1032,53 @@ local function ensureDrive()
   local placedDrive, whyDrive = turtle.place()
   turtle.select(1)
   if not placedDrive then error("could not place the disk drive: " .. tostring(whyDrive), 0) end
-  turtle.select(slotOfTag("disk"))
-  local gave, whyGave = turtle.drop(1)
-  turtle.select(1)
-  if not gave then error("could not put the floppy in the drive: " .. tostring(whyGave), 0) end
-  local d = peripheral and peripheral.wrap("front")
-  local mount
-  for _ = 1, 20 do
-    if d and d.isDiskPresent and d.isDiskPresent() then mount = d.getMountPath(); break end
-    sleep(1)
+  local function present()
+    local dv = peripheral and peripheral.wrap and peripheral.wrap("front")
+    return dv and dv.isDiskPresent and dv.isDiskPresent() and dv or nil
   end
+  local function waitPresent(secs)
+    for _ = 1, secs do
+      if present() then return true end
+      sleep(1)
+    end
+    return false
+  end
+  local function haveDisk()                                    -- a floppy in my inventory (craft another if one fell on the ground)
+    if not slotOfTag("disk") then
+      for sl = 1, 16 do                                        -- it may be lying in front of me: pick it up
+        if turtle.getItemCount(sl) == 0 then turtle.select(sl); turtle.suck(); break end
+      end
+      turtle.select(1)
+    end
+    if not slotOfTag("disk") then                              -- the chests are down at the working level: go back, craft one, come up again
+      step(6)
+      hold = { drive = true, disk = true }
+      ensureHave("disk", 1)
+      hold = {}
+      turnTo(1)
+      step(5)
+    end
+    return slotOfTag("disk")
+  end
+  local inserted = false
+  for attempt = 1, 2 do
+    local sl = haveDisk()
+    if not sl then break end
+    turtle.select(sl)
+    if attempt == 1 then turtle.drop(1) else turtle.place() end   -- 1: hand it over like a hopper; 2: right-click the drive with it
+    turtle.select(1)
+    if waitPresent(4) then inserted = true; break end
+  end
+  if not inserted then                                         -- neither worked: ask the person standing there
+    for waited = 0, 300, 3 do
+      if present() then inserted = true; break end
+      local sl = slotOfTag("disk")
+      say(TITLE, "", "Put the floppy in the disk drive in front of me.", sl and ("Take it from my slot " .. sl .. " and right-click the drive.") or "Pick it up from the ground and right-click the drive.", "Waiting... " .. waited .. " s")
+      sleep(3)
+    end
+  end
+  local d = present()
+  local mount = d and d.getMountPath and d.getMountPath()
   if not mount then error("the disk drive did not take the floppy", 0) end
   local text = table.concat({
     "-- written by the Carve foreman: first start of a new turtle",
