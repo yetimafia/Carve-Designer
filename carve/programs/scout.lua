@@ -1,4 +1,4 @@
--- built by Carve Designer v6.6
+-- built by Carve Designer v6.7
 -- Carve scout: walks (and flies) through open space, looks at every block around it and reports what it
 -- sees to the Designer's Fleet map. It never digs, never places and never enters water or lava.
 -- Stand on the START cell facing forward (+z). It explores within PLAN.radius blocks of the start and from
@@ -205,6 +205,10 @@ local function fleetSend(force)
     '"done":' .. (fleet.done and "true" or "false"), '"run":' .. fleet.run }, ",")
   local fix = gpsFix(now)
   if fix then body = body .. ',"gps":[' .. fix[1] .. "," .. fix[2] .. "," .. fix[3] .. "]" end
+  if fleet.extra then                                          -- a program may add fields (the Foreman: inventory and crafting queue)
+    local okx, frag = pcall(fleet.extra)
+    if okx and type(frag) == "string" then body = body .. frag end
+  end
   body = body .. "}"
   local ok, res, err = pcall(http.post, { url = LIVE_URL .. "/status", body = body, timeout = 5,
                                           headers = { ["Content-Type"] = "application/json" } })
