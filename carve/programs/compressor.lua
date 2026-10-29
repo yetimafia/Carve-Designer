@@ -1,4 +1,4 @@
--- built by Carve Designer v4.3
+-- built by Carve Designer v4.6
 -- Carve auto crafter: crafts one recipe over and over from an input chest into an output chest.
 -- It must be a CRAFTY turtle (a turtle with a crafting table). Chest BEHIND the start = ingredients,
 -- chest on the LEFT = results. The recipe is stored in this program (3x3 grid, row by row).
@@ -375,7 +375,11 @@ end
 local function ensureChest(d, label)
   turnTo(d)
   local ok, data = turtle.inspect()
-  if ok then return isChestItem(type(data) == "table" and data.name or nil) end
+  if ok then
+    if isChestItem(type(data) == "table" and data.name or nil) then return true end
+    if isProtected(data) then return false end              -- a furnace or something else I must not break
+    turtle.dig()                                           -- earth or stone where the chest goes: dig it out, then place the chest
+  end
   while true do
     for s = 1, 16 do
       if isChestItem(itemName(s)) then
