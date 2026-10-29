@@ -1,4 +1,4 @@
--- built by Carve Designer v4.3
+-- built by Carve Designer v4.6
 -- Carve auto smelter: feeds a row of furnaces from an input chest and puts the results in an output chest.
 --
 -- Layout (top view, you stand on START facing the furnaces, "F" = furnace, it needs free air above and below):
@@ -17,7 +17,7 @@ local STATE_FILE = "carve.smelter"
 local TITLE = PLAN.name or "Auto smelter"
 local FUEL = PLAN.fuel or "minecraft:coal"
 local FUEL_HINT = FUEL:gsub("^minecraft:", "")
-local BURN = { (FUEL:gsub("^minecraft:", "")) }
+local BURN = { (FUEL:gsub("^minecraft:", "")), "charcoal" }
 local KEEP = {}
 
 ---------------------------------------------------------------- shared helpers (position, moving, fuel)
@@ -382,7 +382,11 @@ end
 local function ensureChest(d, label)
   turnTo(d)
   local ok, data = turtle.inspect()
-  if ok then return isChestItem(type(data) == "table" and data.name or nil) end
+  if ok then
+    if isChestItem(type(data) == "table" and data.name or nil) then return true end
+    if isProtected(data) then return false end              -- a furnace or something else I must not break
+    turtle.dig()                                           -- earth or stone where the chest goes: dig it out, then place the chest
+  end
   while true do
     for s = 1, 16 do
       if isChestItem(itemName(s)) then
@@ -453,18 +457,53 @@ do
 end
 local KEEP_FUEL = 64                                   -- how much of my own fuel I hold on to
 
-local function fuelSlots()
+local CHARCOAL = "minecraft:charcoal"
+local SWITCH_AT = 32          -- once I hold this much charcoal I burn that instead of coal or wood
+local function isWood(n) return n ~= nil and (n:find("log", 1, true) or n:find("planks", 1, true) or n:find("_wood", 1, true)) ~= nil end
+local function isFuelName(n) return n == FUEL or n == CHARCOAL or n == "minecraft:coal" end
+
+local function slotsOf(name)
   local t = {}
   for s = 1, 16 do
-    if itemName(s) == FUEL then t[#t + 1] = s end
+    if itemName(s) == name then t[#t + 1] = s end
   end
   return t
 end
 
-local function fuelCount()
+local function countOf(name)
   local n = 0
-  for _, s in ipairs(fuelSlots()) do n = n + turtle.getItemCount(s) end
+  for _, s in ipairs(slotsOf(name)) do n = n + turtle.getItemCount(s) end
   return n
+end
+
+local function fuelSlots()
+  return slotsOf(FUEL)
+end
+
+local function fuelCount()
+  return countOf(FUEL)
+end
+
+local function perFuel(name)
+  local short = (name or ""):gsub("^minecraft:", "")
+  local v = 1.5
+  for k, x in pairs(FUEL_ITEMS) do
+    if short:find(k, 1, true) then v = x end
+  end
+  return v
+end
+
+-- what to burn for the stack `st`: charcoal once there is a decent supply, else my coal, else the wood itself (making charcoal)
+local function chooseFuel(st)
+  if countOf(CHARCOAL) >= SWITCH_AT and st.name ~= CHARCOAL then return CHARCOAL end
+  if countOf(FUEL) > 1 then return FUEL end
+  if countOf("minecraft:coal") > 1 then return "minecraft:coal" end
+  if countOf(CHARCOAL) > 1 then return CHARCOAL end
+  if isWood(st.name) then return st.name end                 -- bootstrap: burn some of the logs to make the first charcoal
+  for s = 1, 16 do
+    if isWood(itemName(s)) then return itemName(s) end
+  end
+  return nil
 end
 
 local function home()
@@ -495,32 +534,53 @@ end
 local function unload(pending)
   local keep = {}
   for s in pairs(pending or {}) do keep[s] = true end
-  local held = 0
-  for _, s in ipairs(fuelSlots()) do
-    if held < KEEP_FUEL then keep[s] = true; held = held + turtle.getItemCount(s) end
+  for _, name in ipairs({ FUEL, CHARCOAL }) do                -- my own fuel and charcoal I made: keep up to a stack, send the rest on
+    local held = 0
+    for _, s in ipairs(slotsOf(name)) do
+      if held < KEEP_FUEL then keep[s] = true; held = held + turtle.getItemCount(s) end
+    end
   end
   turnTo(4)
   dumpFront(keep)
   turnTo(1)
 end
 
-local function dropFuel(n)
-  for _, s in ipairs(fuelSlots()) do
-    if n <= 0 then return end
-    turtle.select(s)
-    local k = math.min(n, turtle.getItemCount(s))
-    if turtle.drop(k) then n = n - k end
+-- drop n of item `name` (not from slot `except`) into the furnace in front: its fuel slot
+local function dropFuel(name, n, except)
+  for _, s in ipairs(slotsOf(name)) do
+    if n <= 0 then break end
+    if s ~= except then
+      turtle.select(s)
+      local k = math.min(n, turtle.getItemCount(s))
+      if turtle.drop(k) then n = n - k end
+    end
   end
   turtle.select(1)
 end
 
+local fuelNote = ""
 local function feed(k, st)
   toFurnace(k)
-  local needFuel = math.ceil(st.count / PER_FUEL)
-  dropFuel(math.min(needFuel, fuelCount() - 1))     -- keep one for the turtle itself
-  step(5); step(1)                                  -- above the furnace
+  local fuel = chooseFuel(st)
+  local input = st.count
+  if fuel == st.name then                                   -- burning the very logs I am smelting: split the stack
+    input = math.floor(st.count * 0.6)
+    local f = st.count - input
+    turtle.select(st.slot)
+    turtle.drop(f)
+    turtle.select(1)
+    fuelNote = "burning logs for fuel"
+  elseif fuel then
+    local need = math.ceil(st.count / perFuel(fuel))
+    local keepOne = (fuel == FUEL or fuel == CHARCOAL) and 1 or 0     -- one for the turtle itself
+    dropFuel(fuel, math.min(need, countOf(fuel) - keepOne), st.slot)
+    fuelNote = "burning " .. fuel:gsub("^minecraft:", "")
+  else
+    fuelNote = "no fuel: waiting for logs or coal"
+  end
+  step(5); step(1)                                          -- above the furnace
   turtle.select(st.slot)
-  turtle.dropDown(st.count)
+  turtle.dropDown(input)
   turtle.select(1)
   step(3); step(6)
 end
@@ -606,7 +666,7 @@ local function main()
     local stacks, pending = {}, {}
     for s = 1, 16 do
       local n = itemName(s)
-      if n and n ~= FUEL and not isBuildItem(n) then stacks[#stacks + 1] = { slot = s, count = turtle.getItemCount(s), name = n } end
+      if n and not isFuelName(n) and not isBuildItem(n) then stacks[#stacks + 1] = { slot = s, count = turtle.getItemCount(s), name = n } end
     end
     table.sort(stacks, function(a, b) return a.count > b.count end)
     -- anything that is not a stack to smelt goes to the output chest first (earlier results)
@@ -627,7 +687,8 @@ local function main()
         end
       end
       for i, st in ipairs(used) do
-        say(TITLE, "", "Loading furnace " .. i .. "/" .. #used, "Items " .. st.count .. " x " .. st.name:gsub("^minecraft:", ""))
+        say(TITLE, "", "Loading furnace " .. i .. "/" .. #used, "Items " .. st.count .. " x " .. st.name:gsub("^minecraft:", ""),
+            fuelNote ~= "" and fuelNote or ("charcoal " .. countOf(CHARCOAL) .. "/" .. SWITCH_AT))
         feed(i, st)
       end
       home()
