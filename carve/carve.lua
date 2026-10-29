@@ -11,9 +11,9 @@
 -- Every run downloads the newest version, so after you upload a changed design
 -- from the designer you don't need to do anything else on the turtle.
 
--- every turtle names itself after a Roman god (by its id) the first time it starts, if it has no label yet
+-- every turtle names itself after a Deadlock hero (by its id) the first time it starts, if it has no label yet
 do
-  local GODS = { "Jupiter", "Juno", "Neptune", "Minerva", "Mars", "Venus", "Apollo", "Diana", "Vulcan", "Vesta", "Mercury", "Ceres", "Bacchus", "Pluto", "Saturn", "Janus", "Aurora", "Bellona", "Cupid", "Faunus", "Flora", "Fortuna", "Juventas", "Luna", "Sol", "Terra", "Pomona", "Proserpina", "Quirinus", "Somnus", "Victoria", "Vertumnus", "Tellus", "Ops", "Orcus", "Nox" }
+  local GODS = { "Abrams", "Bebop", "Dynamo", "Grey Talon", "Haze", "Infernus", "Ivy", "Kelvin", "Lady Geist", "Lash", "McGinnis", "Krill", "Paradox", "Pocket", "Seven", "Shiv", "Vindicta", "Viscous", "Warden", "Wraith", "Yamato", "Calico", "Holliday", "Vyper", "Sinclair", "Mirage", "Drifter", "Victor", "Paige", "Billy", "Rem", "Mo" }
   if os.getComputerLabel and os.setComputerLabel and os.getComputerID and not os.getComputerLabel() then
     pcall(os.setComputerLabel, GODS[os.getComputerID() % #GODS + 1])
   end
