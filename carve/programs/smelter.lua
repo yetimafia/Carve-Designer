@@ -1,4 +1,4 @@
--- built by Carve Designer v5.6
+-- built by Carve Designer v5.7
 -- Carve auto smelter: feeds a row of furnaces from an input chest and puts the results in an output chest.
 --
 -- Layout (top view, you stand on START facing the furnaces, "F" = furnace, it needs free air above and below):
