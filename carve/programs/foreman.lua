@@ -1,4 +1,4 @@
--- built by Carve Designer v4.9
+-- built by Carve Designer v5.2
 -- Carve foreman: sets up the other turtles of the colony so you only have to start this one.
 --
 --   1. It asks the Designer app where every job's chests (and furnaces) belong, in this turtle's own frame.
@@ -12,7 +12,7 @@
 
 local args = { ... }
 
-local PLAN = {dispatch = true, jobs = {{foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", name = "Storage keeper", slug = "storage_keeper"}, {foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", name = "Tree farm", slug = "tree_farm"}, {foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", name = "Smelter", slug = "smelter"}, {foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", name = "Compressor", slug = "compressor"}, {foot = false, furnaces = 0, kind = "hauler", name = "Hauler", slug = "hauler"}, {foot = false, furnaces = 0, kind = "scout", name = "Scout", slug = "scout"}}, kind = "foreman", label = "Apollo", live = "http://127.0.0.1:8765", name = "Foreman"}
+local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/8401afa3e8d7aa020e2051019b3ade1f4711e3ca/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Apollo", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
 
 local STATE_FILE = "carve.foreman"
 local TITLE = PLAN.name or "Foreman"
@@ -116,6 +116,61 @@ local function gpsFix(now)
   if fleet.gpsFails >= 2 and not fleet.gpsOk then fleet.gpsDead = true end
 end
 
+-- ---- shared map: every program tells the app what it sees on its way (scouts do it themselves)
+local MAP_SHARE = fleet.on and PLAN.kind ~= "scout" and PLAN.map ~= false
+local mapSeen, mapCount, mapOut, mapMoves, mapLast = {}, 0, {}, 0, 0
+local function mapNote(x, y, z, name)
+  local k = ((x + 512) * 1024 + (z + 512)) * 1024 + (y + 512)
+  local old = mapSeen[k]
+  if old == name then return end
+  if old == nil then
+    if mapCount >= 8000 then return end
+    mapCount = mapCount + 1
+  end
+  mapSeen[k] = name
+  mapOut[#mapOut + 1] = { x, y, z, name }
+  if #mapOut > 1500 then table.remove(mapOut, 1) end
+end
+local function mapInspect(fn)
+  local found, data = fn()
+  if not found then return "air" end
+  return type(data) == "table" and data.name or "unknown"
+end
+-- called after every move: my own cell is free, and the cell I face (and now and then above and below) is whatever it is
+local function mapSee()
+  if not MAP_SHARE then return end
+  mapNote(pos.x, pos.y, pos.z, "air")
+  mapMoves = mapMoves + 1
+  local n = mapInspect(turtle.inspect)
+  if n then mapNote(pos.x + DX[face], pos.y, pos.z + DZ[face], n) end
+  if mapMoves % 4 == 0 then
+    n = mapInspect(turtle.inspectUp); if n then mapNote(pos.x, pos.y + 1, pos.z, n) end
+    n = mapInspect(turtle.inspectDown); if n then mapNote(pos.x, pos.y - 1, pos.z, n) end
+  end
+end
+local function mapFlush(force)
+  if not MAP_SHARE or #mapOut == 0 then return end
+  local now = os.clock()
+  if not force and #mapOut < 30 and now - mapLast < 10 then return end
+  mapLast = now
+  while #mapOut > 0 do
+    local parts, sent = {}, {}
+    for i = 1, math.min(#mapOut, 300) do
+      local c = table.remove(mapOut)
+      sent[#sent + 1] = c
+      parts[#parts + 1] = "[" .. c[1] .. "," .. c[2] .. "," .. c[3] .. "," .. jq(c[4]) .. "]"
+    end
+    local ok, res = pcall(http.post, { url = LIVE_URL .. "/map", timeout = 5, headers = { ["Content-Type"] = "application/json" },
+      body = '{"v":1,"id":' .. os.getComputerID() .. ',"cells":[' .. table.concat(parts, ",") .. "]}" })
+    if ok and res then
+      pcall(function() res.readAll(); res.close() end)
+    else
+      for _, c in ipairs(sent) do mapOut[#mapOut + 1] = c end
+      break
+    end
+  end
+end
+
 -- what the app answered: "ok [command [argument]]", then "me x y z" (world position) and "peer id name x y z" lines
 local function handleReply(reply)
   local cmd, arg = reply:match("^ok (%a+) ?([%w_%-]*)")
@@ -162,6 +217,7 @@ local function fleetSend(force)
     local reply = ""
     pcall(function() reply = res.readAll() or ""; res.close() end)
     handleReply(reply)
+    mapFlush(false)
   else
     fleet.fails = fleet.fails + 1
     local why = tostring(ok and err or res or "no answer"):gsub("%s+", " ")
@@ -207,6 +263,7 @@ local function finish(...)
   fleet.done = true
   say(...)
   fleetSend(true)
+  mapFlush(true)
 end
 
 -- run the program's main(); report errors / Ctrl+T / a Fleet "stop" before ending
@@ -310,6 +367,7 @@ local function step(d)
     if ok then
       pos.x, pos.y, pos.z = pos.x + DX[d], pos.y + DY[d], pos.z + DZ[d]
       savePos()
+      mapSee()
       return
     end
     tries = tries + 1
@@ -409,6 +467,7 @@ local function tryMove(d)
   if fn() then
     pos.x, pos.y, pos.z = pos.x + DX[d], pos.y + DY[d], pos.z + DZ[d]
     savePos()
+    mapSee()
     return true
   end
   return false
@@ -445,9 +504,9 @@ end
 
 local placed = { chest = 0, furnace = 0 }
 
-local function jobsJson()
+local function jobsJson(list)
   local parts = {}
-  for i, j in ipairs(PLAN.jobs) do
+  for i, j in ipairs(list or PLAN.jobs) do
     local foot = "null"
     if j.foot then foot = "[" .. table.concat(j.foot, ",") .. "]" end
     parts[i] = '{"name":' .. jq(j.name) .. ',"slug":' .. jq(j.slug) .. ',"kind":' .. jq(j.kind) ..
@@ -457,9 +516,10 @@ local function jobsJson()
 end
 
 -- one question to the app; returns the lines of the answer, or nil and a reason
-local function ask(action)
+-- list = the jobs to send along (default: all of them), extra = more JSON fields like ',"turtle":12'
+local function ask(action, list, extra)
   local ok, res = pcall(http.post, { url = LIVE_URL .. "/setup", timeout = 15, headers = { ["Content-Type"] = "application/json" },
-    body = '{"v":1,"id":' .. os.getComputerID() .. ',"action":' .. jq(action) .. ',"jobs":' .. jobsJson() .. "}" })
+    body = '{"v":1,"id":' .. os.getComputerID() .. ',"action":' .. jq(action) .. ',"jobs":' .. jobsJson(list) .. (extra or "") .. "}" })
   if not ok or not res then return nil, "Can't reach the app" end
   local text = ""
   pcall(function() text = res.readAll() or ""; res.close() end)
@@ -499,6 +559,471 @@ local function placeHere(what, label)
   end
 end
 
+
+-------------------------------------------------------------- build mode: craft the other turtles
+-- Layout: the supply chest is BEHIND me (the materials), a sorting chest on my LEFT, the new turtle goes in FRONT of me
+-- and a disk drive above it (its floppy holds the first-start program).
+local GRID = { 1, 2, 3, 5, 6, 7, 9, 10, 11 }
+local RESULT = 16
+local function ends(n, suf) return n:sub(-#suf) == suf end
+local TAG = {
+  log = function(n) return ends(n, "_log") end,
+  planks = function(n) return ends(n, "_planks") end,
+  stone = function(n) return n == "minecraft:stone" end,
+  cobble = function(n) return n == "minecraft:cobblestone" end,
+  iron = function(n) return n == "minecraft:iron_ingot" end,
+  redstone = function(n) return n == "minecraft:redstone" end,
+  glass = function(n) return n == "minecraft:glass" end,
+  pane = function(n) return n == "minecraft:glass_pane" end,
+  diamond = function(n) return n == "minecraft:diamond" end,
+  stick = function(n) return n == "minecraft:stick" end,
+  cane = function(n) return n == "minecraft:sugar_cane" end,
+  paper = function(n) return n == "minecraft:paper" end,
+  coal = function(n) return n == "minecraft:coal" or n == "minecraft:charcoal" end,
+  sapling = function(n) return n:find("sapling", 1, true) ~= nil end,
+  chest = function(n) return n == "minecraft:chest" end,
+  furnace = function(n) return n == "minecraft:furnace" end,
+  computer = function(n) return n == "computercraft:computer_normal" end,
+  turtle = function(n) return n == "computercraft:turtle_normal" end,
+  pickaxe = function(n) return n == "minecraft:diamond_pickaxe" end,
+  ctable = function(n) return n == "minecraft:crafting_table" end,
+  drive = function(n) return n == "computercraft:disk_drive" end,
+  disk = function(n) return n == "computercraft:disk" end,
+  bonemeal = function(n) return n == "minecraft:bone_meal" end,
+}
+-- recipes: three rows of three tags ("-" = empty). supply = a ready-made one may be waiting in the chest
+local R = {
+  planks = { rows = { "log - -", "- - -", "- - -" }, supply = true },
+  stick = { rows = { "planks - -", "planks - -", "- - -" } },
+  chest = { rows = { "planks planks planks", "planks - planks", "planks planks planks" }, supply = true },
+  pane = { rows = { "glass glass glass", "glass glass glass", "- - -" }, supply = true },
+  computer = { rows = { "stone stone stone", "stone redstone stone", "stone pane stone" } },
+  turtle = { rows = { "iron iron iron", "iron computer iron", "iron chest iron" } },
+  pickaxe = { rows = { "diamond diamond diamond", "- stick -", "- stick -" } },
+  ctable = { rows = { "planks planks -", "planks planks -", "- - -" } },
+  furnace = { rows = { "cobble cobble cobble", "cobble - cobble", "cobble cobble cobble" }, supply = true },
+  drive = { rows = { "stone stone stone", "stone redstone stone", "stone stone stone" } },
+  paper = { rows = { "cane cane cane", "- - -", "- - -" }, supply = true },
+  disk = { rows = { "redstone paper -", "- - -", "- - -" } },
+}
+local WORDS = { log = "logs", planks = "planks", stone = "stone", cobble = "cobblestone", iron = "iron ingots", redstone = "redstone",
+  glass = "glass", pane = "glass panes", diamond = "diamonds", stick = "sticks", cane = "sugar cane", paper = "paper", coal = "coal",
+  sapling = "saplings", chest = "chests", furnace = "furnaces", bonemeal = "bone meal" }
+
+local function count(tag)
+  local n = 0
+  for s = 1, 16 do
+    local nm = itemName(s)
+    if nm and TAG[tag](nm) then n = n + turtle.getItemCount(s) end
+  end
+  return n
+end
+local function slotOfTag(tag)
+  for s = 1, 16 do
+    local nm = itemName(s)
+    if nm and TAG[tag](nm) then return s end
+  end
+end
+local function snapshot()
+  local t = {}
+  for s = 1, 16 do
+    local nm = itemName(s)
+    if nm then t[s] = { name = nm, count = turtle.getItemCount(s) } end
+  end
+  return t
+end
+
+local STORE = { 4, 8, 12, 13, 14, 15 }                          -- slots outside the crafting grid, used to keep stock
+local hold = {}                                                -- tags the current recipe needs: never sent away to make room
+local ALWAYS = { "turtle", "drive", "disk" }                    -- never sent away: they are the point of all this
+local function isHeld(name)
+  for _, t in ipairs(ALWAYS) do
+    if TAG[t](name) then return true end
+  end
+  for t in pairs(hold) do
+    if TAG[t](name) then return true end
+  end
+  return false
+end
+local function dropAway(s, d)                                  -- a stack to one of the chests (default: the sorting chest on the left)
+  turtle.select(s); turnTo(d or 4); turtle.drop(); turnTo(1); turtle.select(1)
+end
+local function makeRoom(d)                                     -- free one stock slot by sending a stack nobody needs right now away
+  for _, s in ipairs(STORE) do
+    local nm = itemName(s)
+    if nm and not isHeld(nm) then dropAway(s, d); return true end
+  end
+  return false
+end
+
+-- take stacks out of chest `fromD` (3 = behind, 4 = left) until I hold `n` of tag; everything else goes to the other chest
+local function fetchFrom(fromD, toD, tag, n)
+  turnTo(fromD)
+  local guard = 0
+  while count(tag) < n and guard < 400 do
+    guard = guard + 1
+    if freeSlots() < 3 then
+      for s = 1, 16 do                                         -- no room: send stacks I don't need now to the other chest
+        local nm = itemName(s)
+        if nm and not TAG[tag](nm) and not isHeld(nm) then dropAway(s, toD); turnTo(fromD) end
+        if freeSlots() >= 3 then break end
+      end
+      if freeSlots() < 3 then break end
+    end
+    local before = snapshot()
+    if not turtle.suck() then break end
+    local after = snapshot()
+    for s = 1, 16 do
+      local a, b = after[s], before[s]
+      if a and (not b or a.count > b.count) and not TAG[tag](a.name) then
+        turtle.select(s); turnTo(toD); turtle.drop(a.count - (b and b.count or 0)); turnTo(fromD)
+      end
+    end
+    turtle.select(1)
+  end
+end
+local function fetch(tag, n)
+  if count(tag) >= n then return true end
+  fetchFrom(3, 4, tag, n)
+  if count(tag) < n then fetchFrom(4, 3, tag, n) end
+  turnTo(1)
+  return count(tag) >= n
+end
+
+local function park(s, targets)                                -- move whatever is in slot s out of the crafting grid
+  local nm = itemName(s)
+  if not nm then return true end
+  turtle.select(s)
+  for _, d in ipairs(STORE) do
+    if itemName(d) == nm and turtle.getItemCount(d) < 64 then
+      turtle.transferTo(d)
+      if turtle.getItemCount(s) == 0 then return true end
+    end
+  end
+  for _ = 1, 2 do
+    for _, d in ipairs(STORE) do
+      if turtle.getItemCount(d) == 0 then turtle.select(s); turtle.transferTo(d); return true end
+    end
+    if not makeRoom(4) then break end
+  end
+  if not isHeld(nm) then dropAway(s, 4); return true end
+  return false
+end
+
+local function parseRows(rows)
+  local cells = {}
+  for r = 1, 3 do
+    local i = 0
+    for tok in rows[r]:gmatch("%S+") do i = i + 1; cells[(r - 1) * 3 + i] = tok ~= "-" and tok or false end
+  end
+  return cells
+end
+
+-- lay the recipe out in the grid and craft once
+local function craftRowsInner(rows)
+  local cells, want, names, targets = parseRows(rows), {}, {}, {}
+  for i = 1, 9 do
+    local t = cells[i]
+    if t then
+      if not names[t] then
+        local s = slotOfTag(t)
+        names[t] = s and itemName(s)
+      end
+      if not names[t] then return false, "no " .. t end
+      want[i] = names[t]
+      targets[GRID[i]] = true
+    end
+  end
+  for i = 1, 9 do
+    local s = GRID[i]
+    local have = itemName(s)
+    if have and have ~= want[i] then
+      if not park(s, targets) then return false, "inventory full" end
+    end
+  end
+  if turtle.getItemCount(RESULT) > 0 and not park(RESULT, targets) then return false, "inventory full" end
+  for i = 1, 9 do
+    if want[i] and itemName(GRID[i]) ~= want[i] then
+      local donor
+      for d = 1, 16 do
+        if not targets[d] and d ~= RESULT and itemName(d) == want[i] and turtle.getItemCount(d) > 0 then donor = d; break end
+      end
+      if not donor then
+        for d = 1, 16 do
+          if d ~= GRID[i] and itemName(d) == want[i] and turtle.getItemCount(d) > 1 then donor = d; break end
+        end
+      end
+      if not donor then return false, "no " .. cells[i] end
+      turtle.select(donor); turtle.transferTo(GRID[i], 1)
+    end
+  end
+  turtle.select(RESULT)
+  local ok, err = turtle.craft(1)
+  turtle.select(1)
+  if not ok then
+    local seen = {}
+    for i = 1, 9 do seen[i] = (itemName(GRID[i]) or "-"):gsub("^%a+:", "") .. "x" .. turtle.getItemCount(GRID[i]) end
+    return false, tostring(err or "no recipe") .. " [" .. table.concat(seen, " ") .. "]"
+  end
+  for i = 1, 9 do park(GRID[i], targets) end                   -- tidy leftovers into other stacks
+  return true
+end
+
+local function craftRows(rows)                                 -- the stacks this recipe uses are never sent away while laying it out
+  local saved, merged = hold, {}
+  for t in pairs(hold) do merged[t] = true end
+  for _, tok in ipairs(rows) do
+    for t in tok:gmatch("%S+") do if t ~= "-" then merged[t] = true end end
+  end
+  hold = merged
+  local ok, why = craftRowsInner(rows)
+  hold = saved
+  return ok, why
+end
+
+local ensureHave
+local function craftOnce(tag)
+  local need = {}
+  for _, tok in ipairs(R[tag].rows) do
+    for t in tok:gmatch("%S+") do if t ~= "-" then need[t] = (need[t] or 0) + 1 end end
+  end
+  local saved = hold
+  hold = {}
+  for t in pairs(saved) do hold[t] = true end                  -- what the outer recipe already gathered stays safe
+  for t in pairs(need) do hold[t] = true end
+  for _ = 1, 6 do                                              -- gathering one ingredient may make room by sending another away
+    local all = true
+    for t, occ in pairs(need) do
+      ensureHave(t, occ)
+      if count(t) < occ then all = false end
+    end
+    if all then break end
+  end
+  local ok, why = craftRows(R[tag].rows)
+  hold = saved
+  if not ok then error("could not craft " .. tag .. ": " .. tostring(why), 0) end
+end
+
+ensureHave = function(tag, n)
+  local first = true
+  while count(tag) < n do
+    local r = R[tag]
+    if r and r.supply and first then fetch(tag, n) end
+    first = false
+    if count(tag) >= n then break end
+    if r then
+      craftOnce(tag)
+    else
+      fetch(tag, n)
+      if count(tag) < n then
+        say(TITLE, "", "Out of " .. (WORDS[tag] or tag) .. ": need " .. (n - count(tag)) .. " more.", "Put them in the chest behind me.", "Waiting...")
+        sleep(10)
+      end
+    end
+  end
+end
+
+-- a turtle with a pickaxe (and a crafting table when crafty): the upgrade recipes take the tool and the turtle side by side
+local function upgrade(toolTag)
+  local lastWhy
+  hold = { turtle = true, [toolTag] = true }
+  ensureHave(toolTag, 1)
+  ensureHave("turtle", 1)
+  for _, rows in ipairs({ toolTag == "pickaxe" and { "pickaxe turtle -", "- - -", "- - -" } or { "ctable turtle -", "- - -", "- - -" },
+                          toolTag == "pickaxe" and { "turtle pickaxe -", "- - -", "- - -" } or { "turtle ctable -", "- - -", "- - -" } }) do
+    local ok, why = craftRows(rows)
+    if ok then hold = {}; return true end
+    lastWhy = why
+  end
+  hold = {}
+  error("could not fit the " .. toolTag .. " on the turtle: " .. tostring(lastWhy), 0)
+end
+
+local function makeTurtle(crafty)
+  ensureHave("turtle", 1)
+  upgrade("pickaxe")
+  if crafty then upgrade("ctable") end
+end
+
+local function isMachine(n) return n and (n:find("turtle", 1, true) or n:find("computer", 1, true) or n:find("disk_drive", 1, true)) end
+
+local function clearFront()
+  turnTo(1)
+  while turtle.detect() do
+    local _, data = turtle.inspect()
+    local n = type(data) == "table" and data.name or ""
+    if isProtected(data) or isMachine(n) then
+      say(TITLE, "", "Something is in the way in front:", n, "Waiting...")
+      sleep(5)
+    else
+      turtle.dig()
+    end
+  end
+end
+
+local driveReady = false
+-- the disk drive above the spot in front of me, with a floppy whose startup file installs the first-start programs
+local function ensureDrive()
+  if driveReady then return end
+  ensureHave("drive", 1); ensureHave("disk", 1)
+  step(5)
+  clearFront()
+  turtle.select(slotOfTag("drive"))
+  local placedDrive, whyDrive = turtle.place()
+  turtle.select(1)
+  if not placedDrive then error("could not place the disk drive: " .. tostring(whyDrive), 0) end
+  turtle.select(slotOfTag("disk"))
+  local gave, whyGave = turtle.drop(1)
+  turtle.select(1)
+  if not gave then error("could not put the floppy in the drive: " .. tostring(whyGave), 0) end
+  local d = peripheral and peripheral.wrap("front")
+  local mount
+  for _ = 1, 20 do
+    if d and d.isDiskPresent and d.isDiskPresent() then mount = d.getMountPath(); break end
+    sleep(1)
+  end
+  if not mount then error("the disk drive did not take the floppy", 0) end
+  local text = table.concat({
+    "-- written by the Carve foreman: first start of a new turtle",
+    "local function get(url, file)",
+    "  local r = http and http.get(url)",
+    "  if not r then return false end",
+    "  local body = r.readAll(); r.close()",
+    "  local f = fs.open(file, 'w'); f.write(body); f.close()",
+    "  return true",
+    "end",
+    "get(" .. string.format("%q", PLAN.launcher_url or "") .. ", 'carve.lua')",
+    "if get(" .. string.format("%q", PLAN.agent_url or "") .. ", 'agent.lua') then",
+    "  local s = fs.open('startup.lua', 'w'); s.write('shell.run(\"agent\")'); s.close()",
+    "  shell.run('agent')",
+    "else print('Could not download the agent program.') end" }, "\n")
+  local f = fs.open(mount .. "/startup.lua", "w")
+  f.write(text); f.close()
+  step(6)
+  driveReady = true
+end
+
+local function giveKit(job)
+  turnTo(1)
+  local want = { { "coal", 16 } }
+  for _, k in ipairs(job.kit or {}) do
+    if TAG[k[1]] and k[2] > 0 then want[#want + 1] = k end
+  end
+  hold = {}
+  for _, k in ipairs(want) do hold[k[1]] = true end            -- gathering one kind must not send away another
+  for _ = 1, 6 do
+    local all = true
+    for _, k in ipairs(want) do
+      ensureHave(k[1], k[2])
+      if count(k[1]) < k[2] then all = false end
+    end
+    if all then break end
+  end
+  for _, k in ipairs(want) do
+    local tag, left = k[1], k[2]
+    for s = 1, 16 do
+      local nm = itemName(s)
+      if left > 0 and nm and TAG[tag](nm) then
+        turtle.select(s)
+        local c = math.min(left, turtle.getItemCount(s))
+        if turtle.drop(c) then left = left - c end
+      end
+    end
+    turtle.select(1)
+  end
+  hold = {}
+end
+
+local function bootNew()
+  turnTo(1)
+  local t = peripheral and peripheral.wrap("front")
+  if not (t and t.turnOn) then return nil end
+  t.turnOn()
+  local id
+  for _ = 1, 20 do
+    id = t.getID and t.getID()
+    if id and id > 0 then return id end
+    sleep(1)
+  end
+  return nil
+end
+
+local function doneList()
+  local text = readFile("carve.foreman.done") or ""
+  local set = {}
+  for line in text:gmatch("[^\n]+") do set[line] = true end
+  return set
+end
+local function markDone(name)
+  local text = readFile("carve.foreman.done") or ""
+  writeFile("carve.foreman.done", text .. name .. "\n")
+end
+
+local function waitFor(what, fn, seconds)
+  local waited = 0
+  while waited < seconds do
+    if fn() then return true end
+    say(TITLE, "", "Waiting " .. what, math.floor(waited) .. " s of " .. seconds .. " s")
+    sleep(3)
+    waited = waited + 3
+  end
+  return false
+end
+
+local function buildAll(problems)
+  ensureChest(3, "materials")
+  ensureChest(4, "sorting")
+  local done = doneList()
+  local todo = {}
+  for _, j in ipairs(PLAN.jobs) do
+    if j.kind ~= "agent" and j.kind ~= "foreman" then todo[#todo + 1] = j end
+  end
+  local made = 0
+  for i, j in ipairs(todo) do
+    fleet.n, fleet.total = i - 1, #todo
+    if not done[j.name] then
+      say(TITLE, "", "Building the turtle for " .. j.name, i .. " of " .. #todo)
+      makeTurtle(j.crafty)
+      ensureDrive()
+      clearFront()
+      turtle.select(slotOfTag("turtle"))
+      if not turtle.place() then
+        turtle.select(1)
+        problems[#problems + 1] = "couldn't place the turtle for " .. j.name
+        return made
+      end
+      turtle.select(1)
+      local id = bootNew()
+      if not id then
+        problems[#problems + 1] = "the new turtle for " .. j.name .. " did not start"
+        return made
+      end
+      giveKit(j)
+      ask("spawn", { j }, ',"turtle":' .. id .. ',"rel":[0,0,1]')
+      say(TITLE, "", "Waiting for " .. j.name .. "'s turtle", "(#" .. id .. ") to report in...")
+      local ready = waitFor("for turtle #" .. id .. " to report", function()
+        local lines = ask("ready", { j }, ',"turtle":' .. id)
+        return lines and lines[1] == "ready"
+      end, 600)
+      if not ready then
+        problems[#problems + 1] = "turtle #" .. id .. " never reported in (is the app address reachable from it?)"
+        return made
+      end
+      local lines = ask("dispatch", { j }) or {}
+      local sent = false
+      for _, l in ipairs(lines) do
+        if l:match("^sent ") then sent = true elseif l:match("^fail ") then problems[#problems + 1] = l end
+      end
+      if not sent then return made end
+      waitFor("for " .. j.name .. "'s turtle to leave", function() return not turtle.detect() end, 1200)
+      markDone(j.name)
+      made = made + 1
+    end
+  end
+  fleet.n, fleet.total = #todo, #todo
+  return made
+end
+
 local function main()
   if not turtle then printError("This program must run on a turtle."); return end
   if args[1] == "stop" then
@@ -519,6 +1044,21 @@ local function main()
   end
   installStartup()
   local problems = {}
+  if PLAN.build then
+    if args[1] ~= "resume" then fs.delete("carve.foreman.done") end
+    local made = buildAll(problems)
+    if driveReady then
+      goTo(0, 1, 0, "y"); turnTo(1); turtle.suck(); turtle.dig(); goTo(0, 0, 0, "y"); turnTo(1)     -- take the disk drive back
+    end
+    local msg = made .. " turtles built and sent out."
+    if #problems == 0 then
+      removeStartup(); fs.delete(STATE_FILE)
+      finish(TITLE, "", "Done. " .. msg)
+    else
+      finish(TITLE, "", msg, problems[1]:sub(1, 38))
+    end
+    return
+  end
   -- 1. where everything goes
   local plan
   while true do
