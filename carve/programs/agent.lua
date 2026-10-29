@@ -1,4 +1,4 @@
--- built by Carve Designer v6.0
+-- built by Carve Designer v6.2
 -- Carve agent: an idle turtle that waits for orders. Start a program on it from the Designer's Fleet tab,
 -- or from another turtle with   carve start <this turtle's id> <program>.
 -- Needs the  carve  menu program installed on this turtle (the install command from the designer's GitHub tab).
