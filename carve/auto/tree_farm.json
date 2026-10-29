@@ -2,12 +2,12 @@
  "kind": "treefarm",
  "name": "Tree farm",
  "label": "Juno",
- "cols": 3,
- "rows": 3,
+ "cols": 2,
+ "rows": 2,
  "spacing": 4,
  "sapling": "minecraft:oak_sapling",
  "bonemeal": false,
- "wait": 600,
+ "wait": 60,
  "cycles": 0,
  "chest": true
 }
