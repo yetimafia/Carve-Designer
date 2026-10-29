@@ -1,4 +1,4 @@
--- built by Carve Designer v5.7
+-- built by Carve Designer v5.9
 -- Carve hauler: carries items between the chests of your other jobs. Each leg says where to take items from
 -- (a job's output chest), where to put them (another job's input chest) and which items (part of a name, e.g. "log").
 -- It asks the Designer app where those chests are, walks there (climbing over what is in the way, never digging),
@@ -19,9 +19,9 @@ local KEEP = {}
 
 ---------------------------------------------------------------- shared helpers (position, moving, fuel)
 -- directions: 1 = +z (forward at start), 2 = +x (right), 3 = -z (back), 4 = -x (left), 5 = up, 6 = down
--- every turtle names itself after a Roman god (by its id) the first time it starts, if it has no label yet
+-- every turtle names itself after a Deadlock hero (by its id) the first time it starts, if it has no label yet
 do
-  local GODS = { "Jupiter", "Juno", "Neptune", "Minerva", "Mars", "Venus", "Apollo", "Diana", "Vulcan", "Vesta", "Mercury", "Ceres", "Bacchus", "Pluto", "Saturn", "Janus", "Aurora", "Bellona", "Cupid", "Faunus", "Flora", "Fortuna", "Juventas", "Luna", "Sol", "Terra", "Pomona", "Proserpina", "Quirinus", "Somnus", "Victoria", "Vertumnus", "Tellus", "Ops", "Orcus", "Nox" }
+  local GODS = { "Abrams", "Bebop", "Dynamo", "Grey Talon", "Haze", "Infernus", "Ivy", "Kelvin", "Lady Geist", "Lash", "McGinnis", "Krill", "Paradox", "Pocket", "Seven", "Shiv", "Vindicta", "Viscous", "Warden", "Wraith", "Yamato", "Calico", "Holliday", "Vyper", "Sinclair", "Mirage", "Drifter", "Victor", "Paige", "Billy", "Rem", "Mo" }
   if os.getComputerLabel and os.setComputerLabel and os.getComputerID and not os.getComputerLabel() then
     pcall(os.setComputerLabel, PLAN.label or GODS[os.getComputerID() % #GODS + 1])   -- the colony's name for it, else by id
   end
