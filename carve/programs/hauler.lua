@@ -1,4 +1,4 @@
--- built by Carve Designer v6.6
+-- built by Carve Designer v6.7
 -- Carve hauler: carries items between the chests of your other jobs. Each leg says where to take items from
 -- (a job's output chest), where to put them (another job's input chest) and which items (part of a name, e.g. "log").
 -- It asks the Designer app where those chests are, walks there (climbing over what is in the way, never digging),
@@ -208,6 +208,10 @@ local function fleetSend(force)
     '"done":' .. (fleet.done and "true" or "false"), '"run":' .. fleet.run }, ",")
   local fix = gpsFix(now)
   if fix then body = body .. ',"gps":[' .. fix[1] .. "," .. fix[2] .. "," .. fix[3] .. "]" end
+  if fleet.extra then                                          -- a program may add fields (the Foreman: inventory and crafting queue)
+    local okx, frag = pcall(fleet.extra)
+    if okx and type(frag) == "string" then body = body .. frag end
+  end
   body = body .. "}"
   local ok, res, err = pcall(http.post, { url = LIVE_URL .. "/status", body = body, timeout = 5,
                                           headers = { ["Content-Type"] = "application/json" } })
