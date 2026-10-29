@@ -116,6 +116,6 @@
  ],
  "dispatch": true,
  "build": true,
- "agent_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/db50a053ee609f86ac4172a4bf1bf1ede915a106/carve/programs/agent.lua",
+ "agent_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/programs/agent.lua",
  "launcher_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua"
 }
