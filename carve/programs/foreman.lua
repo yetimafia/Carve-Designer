@@ -1,4 +1,4 @@
--- built by Carve Designer v6.7
+-- built by Carve Designer v6.9
 -- Carve foreman: sets up the other turtles of the colony so you only have to start this one.
 --
 --   1. It asks the Designer app where every job's chests (and furnaces) belong, in this turtle's own frame.
@@ -12,7 +12,7 @@
 
 local args = { ... }
 
-local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Krill", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
+local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/9eac8b630f63e67151efd84453070f5d5fd2d393/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Abrams", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
 
 local STATE_FILE = "carve.foreman"
 local TITLE = PLAN.name or "Foreman"
@@ -621,7 +621,7 @@ local R = {
   pickaxe = { rows = { "diamond diamond diamond", "- stick -", "- stick -" } },
   ctable = { rows = { "planks planks -", "planks planks -", "- - -" } },
   furnace = { rows = { "cobble cobble cobble", "cobble - cobble", "cobble cobble cobble" }, supply = true },
-  drive = { rows = { "stone stone stone", "stone redstone stone", "stone stone stone" } },
+  drive = { rows = { "stone stone stone", "stone redstone stone", "stone redstone stone" } },        -- CC: Tweaked: 7 stone and 2 redstone
   paper = { rows = { "cane cane cane", "- - -", "- - -" }, supply = true },
   disk = { rows = { "redstone paper -", "- - -", "- - -" } },
 }
@@ -935,13 +935,21 @@ local function craftOnce(tag)
 end
 
 ensureHave = function(tag, n)
-  local first = true
+  local first, tries = true, 0
   while count(tag) < n do
     local r = R[tag]
     if first then fetch(tag, n) end                       -- earlier crafts may have sent it to the chest
     first = false
     if count(tag) >= n then break end
-    if r then
+    if r and tries >= n + 2 then                          -- crafting keeps not giving me what I need: stop using up the materials
+      fetch(tag, n)
+      if count(tag) < n then
+        say(TITLE, "", "Crafting " .. (WORDS[tag] or tag) .. " does not give me " .. (WORDS[tag] or tag) .. " in this pack.",
+          "I stopped so no materials are wasted.", "Put " .. (n - count(tag)) .. " " .. (WORDS[tag] or tag) .. " in the chest behind me.")
+        sleep(10)
+      end
+    elseif r then
+      tries = tries + 1
       local ok, e = pcall(craftOnce, tag)
       if ok then fetch(tag, n)                                 -- the craft sent what it made to the chest with everything else: take it back
       else                                           -- this pack may not allow the recipe: ask for the finished item instead of crashing
