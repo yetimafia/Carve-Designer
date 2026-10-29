@@ -1,4 +1,4 @@
--- built by Carve Designer v6.0
+-- built by Carve Designer v6.2
 -- Carve foreman: sets up the other turtles of the colony so you only have to start this one.
 --
 --   1. It asks the Designer app where every job's chests (and furnaces) belong, in this turtle's own frame.
@@ -12,7 +12,7 @@
 
 local args = { ... }
 
-local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/de983fb199c651e1cdfbedd5b8f5bd3421d5662c/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Shiv", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
+local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Viscous", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
 
 local STATE_FILE = "carve.foreman"
 local TITLE = PLAN.name or "Foreman"
@@ -747,7 +747,7 @@ local function craftFn()
 end
 
 -- lay the recipe out in the grid and craft once
-local function craftRowsInner(rows, clean)
+local function craftRowsInner(rows)
   local cells, want, names, targets = parseRows(rows), {}, {}, {}
   for i = 1, 9 do
     local t = cells[i]
@@ -759,14 +759,6 @@ local function craftRowsInner(rows, clean)
       if not names[t] then return false, "no " .. t end
       want[i] = names[t]
       targets[GRID[i]] = true
-    end
-  end
-  if clean then                                                -- second try: only the recipe's own items stay in my inventory
-    local keep = {}
-    for _, nm in pairs(want) do keep[nm] = true end
-    for s = 1, 16 do
-      local nm = itemName(s)
-      if nm and not keep[nm] and not TAG.turtle(nm) and not TAG.drive(nm) and not TAG.disk(nm) then dropAway(s, 4) end
     end
   end
   for i = 1, 9 do
@@ -792,6 +784,9 @@ local function craftRowsInner(rows, clean)
       turtle.select(donor); turtle.transferTo(GRID[i], 1)
     end
   end
+  for s = 1, 16 do                                             -- this pack only crafts when the grid items are ALL the turtle holds: everything else goes to the chest
+    if not targets[s] and itemName(s) then dropAway(s, 4) end
+  end
   turtle.select(RESULT)
   local cf = craftFn()
   if not cf then return false, "no crafting table attached" end
@@ -803,7 +798,6 @@ local function craftRowsInner(rows, clean)
     ok, err = cf()
   end
   turtle.select(1)
-  if not ok and not clean then return craftRowsInner(rows, true) end
   if not ok then
     local seen = {}
     for i = 1, 9 do seen[i] = (itemName(GRID[i]) or "-"):gsub("^%a+:", "") .. "x" .. turtle.getItemCount(GRID[i]) end
@@ -852,12 +846,13 @@ ensureHave = function(tag, n)
   local first = true
   while count(tag) < n do
     local r = R[tag]
-    if r and r.supply and first then fetch(tag, n) end
+    if first then fetch(tag, n) end                       -- earlier crafts may have sent it to the chest
     first = false
     if count(tag) >= n then break end
     if r then
       local ok, e = pcall(craftOnce, tag)
-      if not ok then                                           -- this pack may not allow the recipe: ask for the finished item instead of crashing
+      if ok then fetch(tag, n)                                 -- the craft sent what it made to the chest with everything else: take it back
+      else                                           -- this pack may not allow the recipe: ask for the finished item instead of crashing
         e = tostring(e)
         if e:find("Terminated") then error(e, 0) end
         fetch(tag, n)
@@ -883,6 +878,10 @@ local function upgrade(toolTag)
   hold = { turtle = true, [toolTag] = true }
   ensureHave(toolTag, 1)
   ensureHave("turtle", 1)
+  for _ = 1, 3 do                                              -- crafting sends the other items to the chest: bring both back for the upgrade
+    if count(toolTag) < 1 then fetch(toolTag, 1) end
+    if count("turtle") < 1 then fetch("turtle", 1) end
+  end
   for _, rows in ipairs({ toolTag == "pickaxe" and { "pickaxe turtle -", "- - -", "- - -" } or { "ctable turtle -", "- - -", "- - -" },
                           toolTag == "pickaxe" and { "turtle pickaxe -", "- - -", "- - -" } or { "turtle ctable -", "- - -", "- - -" } }) do
     local ok, why = craftRows(rows)
@@ -919,7 +918,14 @@ local driveReady = false
 -- the disk drive above the spot in front of me, with a floppy whose startup file installs the first-start programs
 local function ensureDrive()
   if driveReady then return end
-  ensureHave("drive", 1); ensureHave("disk", 1)
+  hold = { drive = true, disk = true }
+  for _ = 1, 4 do                                              -- a craft sends the other items to the chest: take them back
+    ensureHave("drive", 1); ensureHave("disk", 1)
+    if count("drive") >= 1 and count("disk") >= 1 then break end
+    if count("drive") < 1 then fetch("drive", 1) end
+    if count("disk") < 1 then fetch("disk", 1) end
+  end
+  hold = {}
   step(5)
   clearFront()
   turtle.select(slotOfTag("drive"))
@@ -963,8 +969,9 @@ local function giveKit(job)
   for _, k in ipairs(job.kit or {}) do
     if TAG[k[1]] and k[2] > 0 then want[#want + 1] = k end
   end
+  table.sort(want, function(x, y) local rx, ry = R[x[1]] and 0 or 1, R[y[1]] and 0 or 1; if rx ~= ry then return rx < ry end return x[1] < y[1] end)
   hold = {}
-  for _, k in ipairs(want) do hold[k[1]] = true end            -- gathering one kind must not send away another
+  for _, k in ipairs(want) do hold[k[1]] = true end            -- gathering one kind must not send away another; crafted things first (crafting empties the inventory)
   for _ = 1, 6 do
     local all = true
     for _, k in ipairs(want) do
@@ -1040,7 +1047,10 @@ local function buildAll(problems)
       makeTurtle(j.crafty)
       ensureDrive()
       clearFront()
-      turtle.select(slotOfTag("turtle"))
+      hold = { turtle = true }
+      if count("turtle") < 1 then fetch("turtle", 1) end   -- crafting the floppy sent it to the chest with the rest
+      hold = {}
+      turtle.select(slotOfTag("turtle") or 1)
       if not turtle.place() then
         turtle.select(1)
         problems[#problems + 1] = "couldn't place the turtle for " .. j.name
