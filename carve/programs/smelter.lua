@@ -1,4 +1,4 @@
--- built by Carve Designer v4.7
+-- built by Carve Designer v4.9
 -- Carve auto smelter: feeds a row of furnaces from an input chest and puts the results in an output chest.
 --
 -- Layout (top view, you stand on START facing the furnaces, "F" = furnace, it needs free air above and below):
@@ -11,7 +11,7 @@
 
 local args = { ... }
 
-local PLAN = {fuel = "minecraft:coal", furnaces = 4, kind = "smelter", label = "Neptune", live = "http://127.0.0.1:8765", name = "Smelter", once = false}
+local PLAN = {fuel = "minecraft:coal", furnaces = 2, kind = "smelter", label = "Neptune", live = "http://127.0.0.1:8765", name = "Smelter", once = false}
 
 local STATE_FILE = "carve.smelter"
 local TITLE = PLAN.name or "Auto smelter"
