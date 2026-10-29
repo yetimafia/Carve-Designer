@@ -76,14 +76,14 @@
    "file": "programs/storage_keeper.lua",
    "auto": "auto/storage_keeper.json",
    "kind": "keeper",
-   "updated": "2026-10-29T03:41:27Z",
+   "updated": "2026-10-29T04:15:19Z",
    "foot": [
     -2,
     -1,
     -2,
     2,
     2,
-    9
+    4
    ]
   },
   {
