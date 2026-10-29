@@ -1,4 +1,4 @@
--- built by Carve Designer v6.5
+-- built by Carve Designer v6.6
 -- Carve foreman: sets up the other turtles of the colony so you only have to start this one.
 --
 --   1. It asks the Designer app where every job's chests (and furnaces) belong, in this turtle's own frame.
@@ -12,7 +12,7 @@
 
 local args = { ... }
 
-local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/002a18d76fa9ded6d3d22544dc8c9fd5d165bee3/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Mirage", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
+local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/6730a20fbce9f5c13faa13148422e70171e09c7d/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Drifter", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
 
 local STATE_FILE = "carve.foreman"
 local TITLE = PLAN.name or "Foreman"
@@ -697,10 +697,63 @@ local function fetchFrom(fromD, toD, tag, n)
     turtle.select(1)
   end
 end
+-- what the two chests hold, read through the chest peripheral (no items move). Kept for the Fleet page's Storage tab and for fetch().
+local ledger = {}                                                -- [direction] = { item name = count }
+local lastReport = -99
+local function listChest(d)
+  turnTo(d)
+  local p = peripheral and peripheral.wrap and peripheral.wrap("front")
+  if not (p and p.list) then return nil end
+  local ok, l = pcall(p.list)
+  if not ok or type(l) ~= "table" then return nil end
+  local items = {}
+  for _, st in pairs(l) do items[st.name] = (items[st.name] or 0) + st.count end
+  ledger[d] = items
+  return items
+end
+local function inChest(items, tag)
+  local n = 0
+  for nm, c in pairs(items) do
+    if TAG[tag](nm) then n = n + c end
+  end
+  return n
+end
+local function reportChests(force)                              -- the Foreman shows up on the Storage tab as a read-only warehouse of two chests
+  if not fleet.on or not http then return end
+  local now = os.clock()
+  if not force and now - lastReport < 6 then return end
+  lastReport = now
+  local total, stacks = {}, 0
+  for _, d in ipairs({ 3, 4 }) do
+    for nm, c in pairs(ledger[d] or {}) do
+      total[nm] = (total[nm] or 0) + c
+      stacks = stacks + math.ceil(c / 64)
+    end
+  end
+  local parts = {}
+  for nm, c in pairs(total) do parts[#parts + 1] = jq(nm) .. ":" .. c end
+  table.sort(parts)
+  local body = '{"v":1,"id":' .. os.getComputerID() .. ',"name":' .. jq((PLAN.name or "Foreman") .. "'s chests") ..
+    ',"chests":2,"max":2,"stacks":' .. stacks .. ',"slots":54,"spare":0,"items":{' .. table.concat(parts, ",") .. "}}"
+  pcall(function()
+    local res = http.post({ url = LIVE_URL .. "/storage", body = body, timeout = 5, headers = { ["Content-Type"] = "application/json" } })
+    if res then res.readAll(); res.close() end
+  end)
+end
+
 local function fetch(tag, n)
   if count(tag) >= n then return true end
-  fetchFrom(3, 4, tag, n)
-  if count(tag) < n then fetchFrom(4, 3, tag, n) end
+  local have = {}
+  for _, d in ipairs({ 3, 4 }) do                              -- look first: only go through a chest that really holds it
+    local it = listChest(d)
+    have[d] = it and inChest(it, tag) or nil
+  end
+  reportChests(false)
+  local order = { 3, 4 }
+  if (have[4] or 0) > (have[3] or 0) then order = { 4, 3 } end
+  for _, d in ipairs(order) do
+    if have[d] ~= 0 and count(tag) < n then fetchFrom(d, d == 3 and 4 or 3, tag, n) end
+  end
   turnTo(1)
   return count(tag) >= n
 end
@@ -1038,6 +1091,8 @@ end
 local function buildAll(problems)
   ensureChest(3, "materials")
   ensureChest(4, "sorting")
+  listChest(3); listChest(4); turnTo(1)
+  reportChests(true)                                           -- what is in the chests, for the Storage tab and for the fetches below
   local done = doneList()
   local todo = {}
   for _, j in ipairs(PLAN.jobs) do
