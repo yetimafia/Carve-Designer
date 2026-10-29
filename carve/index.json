@@ -60,12 +60,12 @@
    "file": "programs/smelter.lua",
    "auto": "auto/smelter.json",
    "kind": "smelter",
-   "updated": "2026-10-29T03:41:37Z",
+   "updated": "2026-10-29T04:15:31Z",
    "foot": [
     -2,
     -1,
     -2,
-    5,
+    3,
     2,
     4
    ]
