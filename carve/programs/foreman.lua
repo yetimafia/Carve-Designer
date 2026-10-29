@@ -1,4 +1,4 @@
--- built by Carve Designer v5.6
+-- built by Carve Designer v5.7
 -- Carve foreman: sets up the other turtles of the colony so you only have to start this one.
 --
 --   1. It asks the Designer app where every job's chests (and furnaces) belong, in this turtle's own frame.
@@ -734,6 +734,18 @@ local function parseRows(rows)
   return cells
 end
 
+-- crafty turtles offer turtle.craft; some versions only give the crafting table's own "workbench" peripheral
+local function craftFn()
+  if turtle.craft then return turtle.craft end
+  for _, side in ipairs({ "left", "right" }) do
+    if peripheral and peripheral.getType and peripheral.getType(side) == "workbench" then
+      local w = peripheral.wrap(side)
+      if w and w.craft then return function(n) return w.craft(n) end end
+    end
+  end
+  return nil
+end
+
 -- lay the recipe out in the grid and craft once
 local function craftRowsInner(rows)
   local cells, want, names, targets = parseRows(rows), {}, {}, {}
@@ -773,7 +785,9 @@ local function craftRowsInner(rows)
     end
   end
   turtle.select(RESULT)
-  local ok, err = turtle.craft(1)
+  local cf = craftFn()
+  if not cf then return false, "no crafting table attached" end
+  local ok, err = cf(1)
   turtle.select(1)
   if not ok then
     local seen = {}
@@ -1060,20 +1074,49 @@ local function main()
   installStartup()
   local problems = {}
   if PLAN.build then
-    if not turtle.craft then                                -- a plain turtle can become crafty by equipping a crafting table
+    if not craftFn() then                                   -- a plain turtle can become crafty by equipping a crafting table
+      local notes, tableSide = {}, nil
       for s = 1, 16 do
         if itemName(s) == "minecraft:crafting_table" then
           turtle.select(s)
-          if not turtle.craft then pcall(turtle.equipRight) end
-          if not turtle.craft then pcall(turtle.equipLeft) end
+          for _, side in ipairs({ "Right", "Left" }) do
+            if not craftFn() then
+              local ok, res, err = pcall(turtle["equip" .. side])
+              notes[#notes + 1] = side .. ": " .. tostring(ok and (res and "ok" or err) or res)
+              if ok and res then tableSide = side end
+              sleep(0.5)
+            end
+          end
           turtle.select(1)
-          if turtle.craft then break end
+          if craftFn() then break end
         end
       end
-      if not turtle.craft then
+      if tableSide then                                       -- the tool goes on the other side (equipping on an occupied side swaps)
+        for s = 1, 16 do
+          if itemName(s) == "minecraft:diamond_pickaxe" then
+            turtle.select(s)
+            pcall(turtle["equip" .. (tableSide == "Right" and "Left" or "Right")])
+            turtle.select(1)
+            break
+          end
+        end
+      end
+      if not craftFn() then
         removeStartup()
-        say(TITLE, "", "I can't craft: I'm not a crafty turtle.", "Put a crafting table in my inventory", "and run me again (I equip it myself),", "or craft me as a crafty turtle.")
-        finish(TITLE, "", "Can't craft yet.", "Give me a crafting table.")
+        local eq = {}
+        for _, side in ipairs({ "Left", "Right" }) do
+          local fn = turtle["getEquipped" .. side]
+          if fn then
+            local ok, d = pcall(fn)
+            eq[#eq + 1] = side:sub(1, 1) .. "=" .. tostring(ok and type(d) == "table" and d.name or ok and d or "?"):gsub("^%a+:", "")
+          end
+        end
+        local sides = {}
+        for _, side in ipairs({ "left", "right" }) do
+          sides[#sides + 1] = side:sub(1, 1) .. "=" .. tostring(peripheral and peripheral.getType and peripheral.getType(side))
+        end
+        say(TITLE, "", "I can't craft yet.", "No crafting table is attached.", table.concat(notes, " "):sub(1, 38), "equipped " .. table.concat(eq, " "), "peripherals " .. table.concat(sides, " "))
+        finish(TITLE, "", "Can't craft: " .. table.concat(notes, " "):sub(1, 24), "equipped " .. table.concat(eq, " "), "peripherals " .. table.concat(sides, " "))
         return
       end
     end
