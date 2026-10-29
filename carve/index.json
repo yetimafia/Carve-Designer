@@ -92,14 +92,14 @@
    "file": "programs/tree_farm.lua",
    "auto": "auto/tree_farm.json",
    "kind": "treefarm",
-   "updated": "2026-10-29T03:41:32Z",
+   "updated": "2026-10-29T04:15:25Z",
    "foot": [
     -3,
     -1,
     -2,
-    14,
+    10,
     9,
-    14
+    10
    ]
   }
  ]
