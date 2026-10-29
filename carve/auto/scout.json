@@ -2,7 +2,7 @@
  "kind": "scout",
  "name": "Scout",
  "label": "Venus",
- "radius": 24,
- "up": 8,
- "down": 4
+ "radius": 8,
+ "up": 3,
+ "down": 2
 }
