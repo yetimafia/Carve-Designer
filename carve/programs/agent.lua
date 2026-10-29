@@ -1,4 +1,4 @@
--- built by Carve Designer v5.2
+-- built by Carve Designer v5.6
 -- Carve agent: an idle turtle that waits for orders. Start a program on it from the Designer's Fleet tab,
 -- or from another turtle with   carve start <this turtle's id> <program>.
 -- Needs the  carve  menu program installed on this turtle (the install command from the designer's GitHub tab).
@@ -74,7 +74,7 @@ end
 -- obeys a "stop" from its Fleet page. If the app isn't there nothing breaks.
 local LIVE_URL = PLAN.live or ""
 local fleet = { on = LIVE_URL ~= "" and http ~= nil and http.post ~= nil, last = -100, fails = 0, retryAt = 0, status = "",
-                done = false, msg = "", seq = 0, n = 0, total = 0, cmd = nil, arg = "", world = nil, peers = {},
+                done = false, msg = "", act = "", seq = 0, n = 0, total = 0, cmd = nil, arg = "", world = nil, peers = {},
                 run = os.epoch and math.floor(os.epoch("utc") / 1000) or 0,
                 gpsLast = -100, gpsFails = 0, gpsOk = false, gpsDead = false }
 for _, a in ipairs(args) do
@@ -98,6 +98,9 @@ local function jq(s)
   end)
   return '"' .. s .. '"'
 end
+
+-- what I am trying to do this very moment (shown next to the status on the Fleet page)
+local function act(text) fleet.act = text end
 
 -- a GPS fix of where the turtle is right now (needs a GPS tower and a wireless modem); nil otherwise
 local function gpsFix(now)
@@ -197,7 +200,7 @@ local function fleetSend(force)
     '{"v":1,"seq":' .. fleet.seq, '"id":' .. os.getComputerID(), '"label":' .. jq(label or ""),
     '"name":' .. jq(PLAN.name or ""), '"kind":' .. jq(PLAN.kind or "auto"),
     '"x":' .. pos.x, '"y":' .. pos.y, '"z":' .. pos.z, '"fuel":' .. jq(fuel),
-    '"msg":' .. jq(fleet.msg), '"n":' .. fleet.n, '"total":' .. fleet.total,
+    '"msg":' .. jq(fleet.msg), '"act":' .. jq(fleet.act or ""), '"f":' .. face, '"n":' .. fleet.n, '"total":' .. fleet.total,
     '"done":' .. (fleet.done and "true" or "false"), '"run":' .. fleet.run }, ",")
   local fix = gpsFix(now)
   if fix then body = body .. ',"gps":[' .. fix[1] .. "," .. fix[2] .. "," .. fix[3] .. "]" end
@@ -233,6 +236,7 @@ local function say(...)
     if tostring(lines[i]) ~= "" then parts[#parts + 1] = tostring(lines[i]) end
   end
   fleet.msg = table.concat(parts, " ")
+  fleet.act = ""                                               -- a new screen: the old "trying to ..." is stale
   fleetSend(false)
   local w, h = term.getSize()
   if fleet.status ~= "" and h > #lines + 1 then
@@ -255,8 +259,8 @@ end
 local function finish(...)
   fleet.done = true
   say(...)
-  fleetSend(true)
   mapFlush(true)
+  fleetSend(true)
 end
 
 -- run the program's main(); report errors / Ctrl+T / a Fleet "stop" before ending
@@ -319,6 +323,7 @@ end
 local function ensureFuel()
   local lvl = turtle.getFuelLevel()
   if lvl == "unlimited" or lvl > 150 then return end
+  act("refuelling")
   burn(600)
   while turtle.getFuelLevel() ~= "unlimited" and turtle.getFuelLevel() < 5 do
     say(TITLE, "", "Out of fuel! Put " .. FUEL_HINT, "in my inventory.")
@@ -361,6 +366,7 @@ local function step(d)
       pos.x, pos.y, pos.z = pos.x + DX[d], pos.y + DY[d], pos.z + DZ[d]
       savePos()
       mapSee()
+      fleetSend(false)                                         -- keeps the position on the Fleet map moving
       return
     end
     tries = tries + 1
@@ -371,11 +377,15 @@ local function step(d)
       local _, data = inspect()
       if isProtected(data) then
         say(TITLE, "", "Blocked by " .. tostring(data.name), "Clear the way. Waiting...")
+        act("blocked by " .. tostring(data.name):gsub("^minecraft:", "") .. ", waiting for it to be cleared")
+        fleetSend(true)
         sleep(3)
       else
+        act("digging through " .. tostring(type(data) == "table" and data.name or "a block"):gsub("^minecraft:", ""))
         dig()
       end
     else
+      act("something is in my way, attacking it")
       attack()
       sleep(0.4)
     end
@@ -385,6 +395,7 @@ end
 
 -- go to (x, y, z), moving along the axes in the order given, e.g. "yzx"
 local function goTo(x, y, z, order)
+  act("walking to " .. x .. ", " .. y .. ", " .. z)
   for c in (order or "yzx"):gmatch(".") do
     if c == "y" then
       while pos.y < y do step(5) end
@@ -419,6 +430,7 @@ local function dumpFront(keep)
 end
 
 local function waitSeconds(total, label)
+  act("waiting: " .. tostring(label))
   local left = total
   while left > 0 do
     say(TITLE, "", label, "Next check in " .. math.ceil(left) .. "s", "Ctrl+T stops (resumable).")
@@ -431,6 +443,7 @@ end
 -- make sure there is a chest in the neighbouring cell in direction d (1-4), placing one from my inventory if the
 -- cell is empty. Waits until somebody gives me a chest.
 local function ensureChest(d, label)
+  act("making sure there is a chest for the " .. tostring(label))
   turnTo(d)
   local ok, data = turtle.inspect()
   if ok then
@@ -461,6 +474,7 @@ local function tryMove(d)
     pos.x, pos.y, pos.z = pos.x + DX[d], pos.y + DY[d], pos.z + DZ[d]
     savePos()
     mapSee()
+    fleetSend(false)
     return true
   end
   return false
@@ -468,6 +482,7 @@ end
 
 -- walk to (x, y, z) in this turtle's own frame, climbing over whatever is in the way; false if it can't
 local function travelTo(x, y, z)
+  act("travelling to " .. x .. ", " .. y .. ", " .. z)
   for _ = 1, 3000 do
     if pos.x == x and pos.y == y and pos.z == z then return true end
     local d = pos.x < x and 2 or pos.x > x and 4 or pos.z < z and 1 or pos.z > z and 3 or nil
