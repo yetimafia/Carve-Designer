@@ -2,7 +2,7 @@
  "kind": "smelter",
  "name": "Smelter",
  "label": "Neptune",
- "furnaces": 4,
+ "furnaces": 2,
  "fuel": "minecraft:coal",
  "once": false
 }
