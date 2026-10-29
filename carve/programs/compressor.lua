@@ -1,4 +1,4 @@
--- built by Carve Designer v6.0
+-- built by Carve Designer v6.2
 -- Carve auto crafter: crafts one recipe over and over from an input chest into an output chest.
 -- It must be a CRAFTY turtle (a turtle with a crafting table). Chest BEHIND the start = ingredients,
 -- chest on the LEFT = results. The recipe is stored in this program (3x3 grid, row by row).
