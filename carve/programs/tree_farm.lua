@@ -1,4 +1,4 @@
--- built by Carve Designer v6.7
+-- built by Carve Designer v6.9
 -- Carve tree farm: plants saplings on a grid, waits (or uses bone meal), chops the trees,
 -- replants and keeps the logs in the chest behind the start. Stop it with Ctrl+T; it resumes by itself.
 -- Setup: flat ground (dirt or grass) with free space. Stand on the START cell facing the first row.
