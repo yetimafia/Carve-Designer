@@ -1,4 +1,4 @@
--- built by Carve Designer v4.3
+-- built by Carve Designer v4.6
 -- Carve hauler: carries items between the chests of your other jobs. Each leg says where to take items from
 -- (a job's output chest), where to put them (another job's input chest) and which items (part of a name, e.g. "log").
 -- It asks the Designer app where those chests are, walks there (climbing over what is in the way, never digging),
@@ -379,7 +379,11 @@ end
 local function ensureChest(d, label)
   turnTo(d)
   local ok, data = turtle.inspect()
-  if ok then return isChestItem(type(data) == "table" and data.name or nil) end
+  if ok then
+    if isChestItem(type(data) == "table" and data.name or nil) then return true end
+    if isProtected(data) then return false end              -- a furnace or something else I must not break
+    turtle.dig()                                           -- earth or stone where the chest goes: dig it out, then place the chest
+  end
   while true do
     for s = 1, 16 do
       if isChestItem(itemName(s)) then
