@@ -1,7 +1,7 @@
 {
  "kind": "foreman",
  "name": "Foreman",
- "label": "Drifter",
+ "label": "Ivy",
  "jobs": [
   {
    "name": "Storage keeper",
@@ -116,6 +116,6 @@
  ],
  "dispatch": true,
  "build": true,
- "agent_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/6730a20fbce9f5c13faa13148422e70171e09c7d/carve/programs/agent.lua",
+ "agent_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/db50a053ee609f86ac4172a4bf1bf1ede915a106/carve/programs/agent.lua",
  "launcher_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua"
 }
