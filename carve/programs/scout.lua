@@ -1,4 +1,4 @@
--- built by Carve Designer v4.3
+-- built by Carve Designer v4.6
 -- Carve scout: walks (and flies) through open space, looks at every block around it and reports what it
 -- sees to the Designer's Fleet map. It never digs, never places and never enters water or lava.
 -- Stand on the START cell facing forward (+z). It explores within PLAN.radius blocks of the start and from
@@ -376,7 +376,11 @@ end
 local function ensureChest(d, label)
   turnTo(d)
   local ok, data = turtle.inspect()
-  if ok then return isChestItem(type(data) == "table" and data.name or nil) end
+  if ok then
+    if isChestItem(type(data) == "table" and data.name or nil) then return true end
+    if isProtected(data) then return false end              -- a furnace or something else I must not break
+    turtle.dig()                                           -- earth or stone where the chest goes: dig it out, then place the chest
+  end
   while true do
     for s = 1, 16 do
       if isChestItem(itemName(s)) then
@@ -458,14 +462,20 @@ local function flush(force)
   if not force and #outbox < 60 and os.clock() - lastFlush < 5 then return end
   lastFlush = os.clock()
   while #outbox > 0 do
-    local parts = {}
+    local parts, sent = {}, {}
     for i = 1, math.min(#outbox, 400) do
       local c = table.remove(outbox)
+      sent[#sent + 1] = c
       parts[#parts + 1] = "[" .. c[1] .. "," .. c[2] .. "," .. c[3] .. "," .. jq(c[4]) .. "]"
     end
-    local ok = pcall(http.post, { url = LIVE_URL .. "/map", timeout = 5, headers = { ["Content-Type"] = "application/json" },
+    local ok, res = pcall(http.post, { url = LIVE_URL .. "/map", timeout = 5, headers = { ["Content-Type"] = "application/json" },
       body = '{"v":1,"id":' .. os.getComputerID() .. ',"cells":[' .. table.concat(parts, ",") .. "]}" })
-    if not ok then break end
+    if ok and res then
+      pcall(function() res.readAll(); res.close() end)
+    else
+      for _, part in ipairs(sent) do outbox[#outbox + 1] = part end      -- the app didn't get them: keep them and try again later
+      break
+    end
   end
 end
 
