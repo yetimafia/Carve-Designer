@@ -1,4 +1,4 @@
--- built by Carve Designer v7.8
+-- built by Carve Designer v7.9
 -- Carve storage keeper: a warehouse of chests that builds itself, remembers what is in every chest and
 -- reports the list to the Designer app (Storage tab of the Fleet page).
 --
