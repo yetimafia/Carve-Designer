@@ -1,4 +1,4 @@
--- built by Carve Designer v7.0
+-- built by Carve Designer v7.4
 -- Carve foreman: sets up the other turtles of the colony so you only have to start this one.
 --
 --   1. It asks the Designer app where every job's chests (and furnaces) belong, in this turtle's own frame.
@@ -12,7 +12,7 @@
 
 local args = { ... }
 
-local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/9013337a5e67463216d049632b16efe8e076b385/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Pocket", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
+local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/d0429936dfebfb3179cd0db9903cf1d53a4f1017/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Victor", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
 
 local STATE_FILE = "carve.foreman"
 local TITLE = PLAN.name or "Foreman"
@@ -608,6 +608,7 @@ local TAG = {
   ctable = function(n) return n == "minecraft:crafting_table" end,
   drive = function(n) return n == "computercraft:disk_drive" end,
   disk = function(n) return n == "computercraft:disk" end,
+  hopper = function(n) return n == "minecraft:hopper" end,
   bonemeal = function(n) return n == "minecraft:bone_meal" end,
 }
 -- recipes: three rows of three tags ("-" = empty). supply = a ready-made one may be waiting in the chest
@@ -621,13 +622,14 @@ local R = {
   pickaxe = { rows = { "diamond diamond diamond", "- stick -", "- stick -" } },
   ctable = { rows = { "planks planks -", "planks planks -", "- - -" } },
   furnace = { rows = { "cobble cobble cobble", "cobble - cobble", "cobble cobble cobble" }, supply = true },
+  hopper = { rows = { "iron - iron", "iron chest iron", "- iron -" }, supply = true },
   drive = { rows = { "stone stone stone", "stone redstone stone", "stone redstone stone" } },        -- CC: Tweaked: 7 stone and 2 redstone
   paper = { rows = { "cane cane cane", "- - -", "- - -" }, supply = true },
   disk = { rows = { "redstone paper -", "- - -", "- - -" } },
 }
 local WORDS = { log = "logs", planks = "planks", stone = "stone", cobble = "cobblestone", iron = "iron ingots", redstone = "redstone",
   glass = "glass", pane = "glass panes", diamond = "diamonds", stick = "sticks", cane = "sugar cane", paper = "paper", coal = "coal",
-  sapling = "saplings", chest = "chests", furnace = "furnaces", bonemeal = "bone meal" }
+  sapling = "saplings", hopper = "hoppers", chest = "chests", furnace = "furnaces", bonemeal = "bone meal" }
 
 local function count(tag)
   local n = 0
@@ -1016,14 +1018,49 @@ end
 
 local driveReady = false
 -- the disk drive above the spot in front of me, with a floppy whose startup file installs the first-start programs
+local function startupText()
+  return table.concat({
+    "-- written by the Carve foreman: first start of a new turtle",
+    "local k = fs.open('carve.kit', 'w'); k.write('1'); k.close()      -- the agent looks for its starter kit chest once",
+    "local function get(url, file)",
+    "  local r = http and http.get(url)",
+    "  if not r then return false end",
+    "  local body = r.readAll(); r.close()",
+    "  local f = fs.open(file, 'w'); f.write(body); f.close()",
+    "  return true",
+    "end",
+    "get(" .. string.format("%q", PLAN.launcher_url or "") .. ", 'carve.lua')",
+    "if get(" .. string.format("%q", PLAN.agent_url or "") .. ", 'agent.lua') then",
+    "  local s = fs.open('startup.lua', 'w'); s.write('shell.run(\"agent\")'); s.close()",
+    "  shell.run('agent')",
+    "else print('Could not download the agent program.') end" }, "\n")
+end
+
+-- a disk drive with a floppy from an earlier run stays above the cell in front of me: use it again (nobody has to load it a second time)
+local function reuseDrive()
+  step(5)
+  local okI, blk = turtle.inspect()
+  local dv = okI and blk and tostring(blk.name):find("disk_drive", 1, true) and peripheral and peripheral.wrap and peripheral.wrap("front")
+  if dv and dv.isDiskPresent and dv.isDiskPresent() and dv.getMountPath and dv.getMountPath() then
+    local f = fs.open(dv.getMountPath() .. "/startup.lua", "w")
+    f.write(startupText()); f.close()                           -- refresh the first-start program (the addresses may have changed)
+    step(6)
+    return true
+  end
+  step(6)
+  return false
+end
+
 local function ensureDrive()
   if driveReady then return end
-  hold = { drive = true, disk = true }
+  if reuseDrive() then driveReady = true; return end
+  hold = { drive = true, disk = true, hopper = true }
   for _ = 1, 4 do                                              -- a craft sends the other items to the chest: take them back
-    ensureHave("drive", 1); ensureHave("disk", 1)
-    if count("drive") >= 1 and count("disk") >= 1 then break end
+    ensureHave("drive", 1); ensureHave("disk", 1); ensureHave("hopper", 1)
+    if count("drive") >= 1 and count("disk") >= 1 and count("hopper") >= 1 then break end
     if count("drive") < 1 then fetch("drive", 1) end
     if count("disk") < 1 then fetch("disk", 1) end
+    if count("hopper") < 1 then fetch("hopper", 1) end
   end
   hold = {}
   step(5)
@@ -1032,8 +1069,8 @@ local function ensureDrive()
   local placedDrive, whyDrive = turtle.place()
   turtle.select(1)
   if not placedDrive then error("could not place the disk drive: " .. tostring(whyDrive), 0) end
-  local function present()
-    local dv = peripheral and peripheral.wrap and peripheral.wrap("front")
+  local function present(side)
+    local dv = peripheral and peripheral.wrap and peripheral.wrap(side or "front")
     return dv and dv.isDiskPresent and dv.isDiskPresent() and dv or nil
   end
   local function waitPresent(secs)
@@ -1061,75 +1098,139 @@ local function ensureDrive()
     return slotOfTag("disk")
   end
   local inserted = false
-  for attempt = 1, 2 do
+  local notes = {}                                              -- what each try said, shown if I have to ask for help
+  local hs = slotOfTag("hopper")
+  local tries = 3
+  if hs then                                                    -- a hopper above the drive feeds it: drop the floppy into the hopper from above
+    local sl = haveDisk()
+    if sl then
+      hs = slotOfTag("hopper") or hs
+      step(5); step(5); step(1)                                 -- two cells up and one forward: above the cell over the drive
+      turtle.select(hs)
+      local okH, whyH = turtle.placeDown()
+      notes[#notes + 1] = "hopper " .. tostring(okH) .. (whyH and (" " .. tostring(whyH):sub(1, 18)) or "")
+      sl = slotOfTag("disk") or sl
+      turtle.select(sl)
+      local okD, whyD = turtle.dropDown(1)
+      notes[#notes + 1] = "into hopper " .. tostring(okD) .. (whyD and (" " .. tostring(whyD):sub(1, 18)) or "")
+      turtle.select(1)
+      sleep(2)
+      step(3); step(6); step(6); turnTo(1)
+      if waitPresent(8) then inserted = true end
+      tries = 0                                                 -- dropping it elsewhere would only lose the floppy
+    end
+  end
+  for attempt = 1, tries do
     local sl = haveDisk()
     if not sl then break end
-    turtle.select(sl)
-    if attempt == 1 then turtle.drop(1) else turtle.place() end   -- 1: hand it over like a hopper; 2: right-click the drive with it
-    turtle.select(1)
-    if waitPresent(4) then inserted = true; break end
+    local okTry, whyTry
+    if attempt == 3 then                                       -- from above, the way a hopper would feed it
+      step(5); step(1)
+      turtle.select(sl)
+      okTry, whyTry = turtle.dropDown(1)
+      turtle.select(1)
+      local seen = false
+      for _ = 1, 4 do
+        if present("bottom") then seen = true; break end
+        sleep(1)
+      end
+      step(3); step(6); turnTo(1)       -- back to the cell above me, facing the drive
+      notes[#notes + 1] = "dropDown " .. tostring(okTry) .. (whyTry and (" " .. tostring(whyTry):sub(1, 18)) or "")
+      if seen or waitPresent(2) then inserted = true; break end
+    else
+      turtle.select(sl)
+      if attempt == 1 then okTry, whyTry = turtle.drop(1) else okTry, whyTry = turtle.place() end   -- 1: hand it over; 2: right-click the drive with it
+      notes[#notes + 1] = (attempt == 1 and "drop " or "place ") .. tostring(okTry) .. (whyTry and (" " .. tostring(whyTry):sub(1, 18)) or "")
+      turtle.select(1)
+      if waitPresent(4) then inserted = true; break end
+    end
+  end
+  if not inserted then
+    local okI, blk = turtle.inspect()
+    notes[#notes + 1] = "front " .. (okI and blk and tostring(blk.name):gsub("^%a+:", "") or "nothing")
+    notes[#notes + 1] = "type " .. tostring(peripheral and peripheral.getType and peripheral.getType("front"))
   end
   if not inserted then                                         -- neither worked: ask the person standing there
     for waited = 0, 300, 3 do
       if present() then inserted = true; break end
       local sl = slotOfTag("disk")
-      say(TITLE, "", "Put the floppy in the disk drive in front of me.", sl and ("Take it from my slot " .. sl .. " and right-click the drive.") or "Pick it up from the ground and right-click the drive.", "Waiting... " .. waited .. " s")
+      say(TITLE, "", "Put the floppy in the disk drive in front of me.", sl and ("Take it from my slot " .. sl .. " and right-click the drive.") or "Pick it up from the ground and right-click the drive.", "Waiting... " .. waited .. " s", table.concat(notes, "; "))
       sleep(3)
     end
   end
   local d = present()
   local mount = d and d.getMountPath and d.getMountPath()
   if not mount then error("the disk drive did not take the floppy", 0) end
-  local text = table.concat({
-    "-- written by the Carve foreman: first start of a new turtle",
-    "local function get(url, file)",
-    "  local r = http and http.get(url)",
-    "  if not r then return false end",
-    "  local body = r.readAll(); r.close()",
-    "  local f = fs.open(file, 'w'); f.write(body); f.close()",
-    "  return true",
-    "end",
-    "get(" .. string.format("%q", PLAN.launcher_url or "") .. ", 'carve.lua')",
-    "if get(" .. string.format("%q", PLAN.agent_url or "") .. ", 'agent.lua') then",
-    "  local s = fs.open('startup.lua', 'w'); s.write('shell.run(\"agent\")'); s.close()",
-    "  shell.run('agent')",
-    "else print('Could not download the agent program.') end" }, "\n")
+  local text = startupText()
   local f = fs.open(mount .. "/startup.lua", "w")
   f.write(text); f.close()
   step(6)
   driveReady = true
 end
 
+-- A new turtle does not take items from my hands (a turtle is no chest to drop into), so its starter kit goes into a CHEST standing
+-- in front of the cell it will be placed in; the new turtle empties that chest by itself when it starts, then I take the chest back.
 local function giveKit(job)
   turnTo(1)
   local want = { { "coal", 16 } }
+  local hasChest = false
   for _, k in ipairs(job.kit or {}) do
-    if TAG[k[1]] and k[2] > 0 then want[#want + 1] = k end
+    if TAG[k[1]] and k[2] > 0 then
+      want[#want + 1] = { k[1], k[2] + (k[1] == "chest" and 1 or 0) }          -- one more chest: the one that carries the kit
+      if k[1] == "chest" then hasChest = true end
+    end
   end
+  if not hasChest then want[#want + 1] = { "chest", 1 } end
   table.sort(want, function(x, y) local rx, ry = R[x[1]] and 0 or 1, R[y[1]] and 0 or 1; if rx ~= ry then return rx < ry end return x[1] < y[1] end)
   hold = {}
   for _, k in ipairs(want) do hold[k[1]] = true end            -- gathering one kind must not send away another; crafted things first (crafting empties the inventory)
   for _ = 1, 6 do
+    for _, k in ipairs(want) do ensureHave(k[1], k[2]) end
     local all = true
-    for _, k in ipairs(want) do
-      ensureHave(k[1], k[2])
+    for _, k in ipairs(want) do                                -- a later craft may have sent an earlier item away: look again at the end
       if count(k[1]) < k[2] then all = false end
     end
     if all then break end
   end
+  step(1)                                                       -- onto the cell the new turtle will stand on; the chest goes one further
+  turnTo(1)
+  local okI, blk = turtle.inspect()
+  local there = okI and type(blk) == "table" and tostring(blk.name):find("chest", 1, true)
+  if not there then
+    clearFront()
+    local cs = slotOfTag("chest")
+    if not cs then error("no chest to carry the kit", 0) end
+    turtle.select(cs)
+    local placed, why = turtle.place()
+    turtle.select(1)
+    if not placed then error("could not place the kit chest: " .. tostring(why), 0) end
+  end
   for _, k in ipairs(want) do
-    local tag, left = k[1], k[2]
-    for s = 1, 16 do
-      local nm = itemName(s)
+    local tag = k[1]
+    local left = k[2] - ((tag == "chest" and not there) and 1 or 0)        -- the placed chest is not part of the kit
+    for sl = 1, 16 do
+      local nm = itemName(sl)
       if left > 0 and nm and TAG[tag](nm) then
-        turtle.select(s)
-        local c = math.min(left, turtle.getItemCount(s))
+        turtle.select(sl)
+        local c = math.min(left, turtle.getItemCount(sl))
         if turtle.drop(c) then left = left - c end
       end
     end
     turtle.select(1)
   end
   hold = {}
+  step(3)
+  turnTo(1)
+end
+
+-- take the empty kit chest back (the new turtle has left): I need it again for the next one
+local function takeKitChest()
+  step(1)
+  turnTo(1)
+  local okI, blk = turtle.inspect()
+  if okI and type(blk) == "table" and tostring(blk.name):find("chest", 1, true) then turtle.dig() end
+  step(3)
+  turnTo(1)
 end
 
 local function bootNew()
@@ -1168,7 +1269,29 @@ local function waitFor(what, fn, seconds)
   return false
 end
 
+-- eat some of the chest's coal right away so the Foreman can walk (stepping up to the disk drive and back, placing chests); the rest goes back
+local function topUpFuel(target)
+  local lvl = turtle.getFuelLevel()
+  if lvl == "unlimited" then return end
+  target = math.min(target or 1000, turtle.getFuelLimit())
+  if lvl >= target then return end
+  act("refuelling")
+  say(TITLE, "", "Getting some fuel from the chest...", "fuel " .. tostring(lvl) .. " of " .. target)
+  if count("coal") < 1 then fetch("coal", math.max(1, math.ceil((target - lvl) / 80))) end
+  burn(target)
+  for sl = 1, 16 do                                            -- what I did not need goes back (the new turtles' kits use it later)
+    local nm = itemName(sl)
+    if nm and TAG.coal(nm) and turtle.getItemCount(sl) > 8 then
+      turtle.select(sl)
+      turnTo(3); turtle.drop(turtle.getItemCount(sl) - 8); turnTo(1)
+    end
+  end
+  turtle.select(1)
+  turnTo(1)
+end
+
 local function buildAll(problems)
+  topUpFuel(1000)
   ensureChest(3, "materials")
   ensureChest(4, "sorting")
   listChest(3); listChest(4); turnTo(1)
@@ -1188,10 +1311,11 @@ local function buildAll(problems)
       say(TITLE, "", "Building the turtle for " .. j.name, i .. " of " .. #todo)
       makeTurtle(j.crafty)
       ensureDrive()
-      clearFront()
+      giveKit(j)                                                -- the kit waits in a chest in front of the cell the new turtle will take
       hold = { turtle = true }
       if count("turtle") < 1 then fetch("turtle", 1) end   -- crafting the floppy sent it to the chest with the rest
       hold = {}
+      clearFront()
       turtle.select(slotOfTag("turtle") or 1)
       if not turtle.place() then
         turtle.select(1)
@@ -1204,7 +1328,6 @@ local function buildAll(problems)
         problems[#problems + 1] = "the new turtle for " .. j.name .. " did not start"
         return made
       end
-      giveKit(j)
       ask("spawn", { j }, ',"turtle":' .. id .. ',"rel":[0,0,1]')
       say(TITLE, "", "Waiting for " .. j.name .. "'s turtle", "(#" .. id .. ") to report in...")
       local ready = waitFor("for turtle #" .. id .. " to report", function()
@@ -1222,6 +1345,7 @@ local function buildAll(problems)
       end
       if not sent then return made end
       waitFor("for " .. j.name .. "'s turtle to leave", function() return not turtle.detect() end, 1200)
+      takeKitChest()
       markDone(j.name)
       if jobQ[i] then jobQ[i].s = "done" end
       made = made + 1
@@ -1300,9 +1424,6 @@ local function main()
     end
     if args[1] ~= "resume" then fs.delete("carve.foreman.done") end
     local made = buildAll(problems)
-    if driveReady then
-      goTo(0, 1, 0, "y"); turnTo(1); turtle.suck(); turtle.dig(); goTo(0, 0, 0, "y"); turnTo(1)     -- take the disk drive back
-    end
     local msg = made .. " turtles built and sent out."
     if #problems == 0 then
       removeStartup(); fs.delete(STATE_FILE)
