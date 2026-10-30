@@ -1,4 +1,4 @@
--- built by Carve Designer v7.6
+-- built by Carve Designer v7.8
 -- Carve hauler: carries items between the chests of your other jobs. Each leg says where to take items from
 -- (a job's output chest), where to put them (another job's input chest) and which items (part of a name, e.g. "log").
 -- It asks the Designer app where those chests are, walks there (climbing over what is in the way, never digging),
@@ -175,7 +175,7 @@ end
 local function handleReply(reply)
   local cmd, arg = reply:match("^ok (%a+) ?([%w_%-]*)")
   if cmd then fleet.cmd, fleet.arg = cmd, arg or "" end        -- kept until the program has acted on it
-  if cmd == "stop" then os.queueEvent("terminate") end
+  if cmd == "stop" then fleet.stopAsked = true; os.queueEvent("terminate") end
   fleet.world, fleet.peers = nil, {}
   for line in reply:gmatch("[^\n]+") do
     local gx, gy, gz, gf = line:match("^goto (-?%d+) (-?%d+) (-?%d+) (%d)$")
@@ -277,7 +277,12 @@ local function runMain(main)
   fleetSend(true)
   local ok, err = pcall(main)
   if not ok then
-    fleet.msg = tostring(err):find("Terminated") and "Stopped (resumes with: carve resume)" or ("Error: " .. tostring(err))
+    if fleet.stopAsked and tostring(err):find("Terminated") then      -- Stop on the Fleet page really stops: no automatic restart afterwards
+      pcall(removeStartup); if STATE_FILE then pcall(fs.delete, STATE_FILE) end
+      fleet.msg = "Stopped from the Fleet page. It will not restart by itself."
+    else
+      fleet.msg = tostring(err):find("Terminated") and "Stopped (resumes with: carve resume)" or ("Error: " .. tostring(err))
+    end
     fleetSend(true)
     error(err, 0)
   end
