@@ -1,4 +1,4 @@
--- built by Carve Designer v7.9
+-- built by Carve Designer v8.0
 -- Carve auto crafter: crafts one recipe over and over from an input chest into an output chest.
 -- It must be a CRAFTY turtle (a turtle with a crafting table). Chest BEHIND the start = ingredients,
 -- chest on the LEFT = results. The recipe is stored in this program (3x3 grid, row by row).
@@ -207,6 +207,14 @@ local function fleetSend(force)
   if fleet.extra then                                          -- a program may add fields (the Foreman: inventory and crafting queue)
     local okx, frag = pcall(fleet.extra)
     if okx and type(frag) == "string" then body = body .. frag end
+  elseif turtle and turtle.getItemDetail and (force or now - (fleet.invAt or -100) > 8) then      -- everybody else: what I carry (the Fleet page's inventory tab)
+    fleet.invAt = now
+    local inv = {}
+    for sl = 1, 16 do
+      local d = turtle.getItemDetail(sl)
+      if d and d.name then inv[#inv + 1] = "[" .. sl .. "," .. jq(d.name) .. "," .. (d.count or 0) .. "]" end
+    end
+    body = body .. ',"crafty":' .. (turtle.craft and "true" or "false") .. ',"inv":[' .. table.concat(inv, ",") .. "]"
   end
   body = body .. "}"
   local ok, res, err = pcall(http.post, { url = LIVE_URL .. "/status", body = body, timeout = 5,
