@@ -1,4 +1,4 @@
--- built by Carve Designer v7.9
+-- built by Carve Designer v8.0
 -- Carve tree farm: plants saplings on a grid, waits (or uses bone meal), chops the trees,
 -- replants and keeps the logs in the chest behind the start. Stop it with Ctrl+T; it resumes by itself.
 -- Setup: flat ground (dirt or grass) with free space. Stand on the START cell facing the first row.
@@ -209,6 +209,14 @@ local function fleetSend(force)
   if fleet.extra then                                          -- a program may add fields (the Foreman: inventory and crafting queue)
     local okx, frag = pcall(fleet.extra)
     if okx and type(frag) == "string" then body = body .. frag end
+  elseif turtle and turtle.getItemDetail and (force or now - (fleet.invAt or -100) > 8) then      -- everybody else: what I carry (the Fleet page's inventory tab)
+    fleet.invAt = now
+    local inv = {}
+    for sl = 1, 16 do
+      local d = turtle.getItemDetail(sl)
+      if d and d.name then inv[#inv + 1] = "[" .. sl .. "," .. jq(d.name) .. "," .. (d.count or 0) .. "]" end
+    end
+    body = body .. ',"crafty":' .. (turtle.craft and "true" or "false") .. ',"inv":[' .. table.concat(inv, ",") .. "]"
   end
   body = body .. "}"
   local ok, res, err = pcall(http.post, { url = LIVE_URL .. "/status", body = body, timeout = 5,
