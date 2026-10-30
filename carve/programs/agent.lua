@@ -1,4 +1,4 @@
--- built by Carve Designer v7.0
+-- built by Carve Designer v7.4
 -- Carve agent: an idle turtle that waits for orders. Start a program on it from the Designer's Fleet tab,
 -- or from another turtle with   carve start <this turtle's id> <program>.
 -- Needs the  carve  menu program installed on this turtle (the install command from the designer's GitHub tab).
@@ -514,6 +514,24 @@ local function travelTo(x, y, z)
 end
 
 
+-- a turtle the Foreman built finds its starter kit (coal, saplings, chests...) in a chest next to it, and eats some of the coal
+local function collectKit()
+  if not fs.exists("carve.kit") then return end
+  fs.delete("carve.kit")
+  say(TITLE, "", "Looking for my starter kit...")
+  for f = 1, 4 do
+    turnTo(f)
+    local ok, blk = turtle.inspect()
+    if ok and type(blk) == "table" and tostring(blk.name):find("chest", 1, true) then
+      local guard = 0
+      while guard < 40 and turtle.suck() do guard = guard + 1 end
+    end
+  end
+  turnTo(1)
+  turtle.select(1)
+  burn(1000)
+end
+
 local function main()
   if not turtle then printError("This program must run on a turtle."); return end
   if args[1] == "stop" then
@@ -527,6 +545,7 @@ local function main()
   end
   pos.x, pos.y, pos.z, face = 0, 0, 0, 1
   installStartup()
+  collectKit()
   while true do
     say(TITLE, "", "Idle - waiting for a job", "Start me from the Fleet tab, or:", "carve start " .. os.getComputerID() .. " <program>")
     fleetSend(true)
