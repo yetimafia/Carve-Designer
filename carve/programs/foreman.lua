@@ -1,4 +1,4 @@
--- built by Carve Designer v7.9
+-- built by Carve Designer v8.0
 -- Carve foreman: sets up the other turtles of the colony so you only have to start this one.
 --
 --   1. It asks the Designer app where every job's chests (and furnaces) belong, in this turtle's own frame.
@@ -12,7 +12,7 @@
 
 local args = { ... }
 
-local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/ac528c446bb85f50663403c3e4b34295612afaf8/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Lash", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
+local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/ba710f97fc9bf63b6259f6d04f3baaeea835df02/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Paradox", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
 
 local STATE_FILE = "carve.foreman"
 local TITLE = PLAN.name or "Foreman"
@@ -214,6 +214,14 @@ local function fleetSend(force)
   if fleet.extra then                                          -- a program may add fields (the Foreman: inventory and crafting queue)
     local okx, frag = pcall(fleet.extra)
     if okx and type(frag) == "string" then body = body .. frag end
+  elseif turtle and turtle.getItemDetail and (force or now - (fleet.invAt or -100) > 8) then      -- everybody else: what I carry (the Fleet page's inventory tab)
+    fleet.invAt = now
+    local inv = {}
+    for sl = 1, 16 do
+      local d = turtle.getItemDetail(sl)
+      if d and d.name then inv[#inv + 1] = "[" .. sl .. "," .. jq(d.name) .. "," .. (d.count or 0) .. "]" end
+    end
+    body = body .. ',"crafty":' .. (turtle.craft and "true" or "false") .. ',"inv":[' .. table.concat(inv, ",") .. "]"
   end
   body = body .. "}"
   local ok, res, err = pcall(http.post, { url = LIVE_URL .. "/status", body = body, timeout = 5,
@@ -682,7 +690,7 @@ local function extraJson()
   for _, j in ipairs(jobQ) do
     if j.s == "done" then q[#q + 1] = '{"t":' .. jq("Turtle for " .. j.name) .. ',"s":"done"}' end
   end
-  return ',"inv":[' .. table.concat(inv, ",") .. '],"q":[' .. table.concat(q, ",") .. "]"
+  return ',"crafty":true,"inv":[' .. table.concat(inv, ",") .. '],"q":[' .. table.concat(q, ",") .. "]"
 end
 fleet.extra = extraJson
 
