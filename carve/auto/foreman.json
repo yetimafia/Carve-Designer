@@ -1,7 +1,7 @@
 {
  "kind": "foreman",
  "name": "Foreman",
- "label": "Paradox",
+ "label": "Kelvin",
  "jobs": [
   {
    "name": "Storage keeper",
@@ -116,6 +116,6 @@
  ],
  "dispatch": true,
  "build": true,
- "agent_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/programs/agent.lua",
+ "agent_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/8a795c0dcf87385e4637e2a72394bf386cb0cccc/carve/programs/agent.lua",
  "launcher_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua"
 }
