@@ -1,4 +1,4 @@
--- built by Carve Designer v7.6
+-- built by Carve Designer v7.8
 -- Carve tree farm: plants saplings on a grid, waits (or uses bone meal), chops the trees,
 -- replants and keeps the logs in the chest behind the start. Stop it with Ctrl+T; it resumes by itself.
 -- Setup: flat ground (dirt or grass) with free space. Stand on the START cell facing the first row.
@@ -173,7 +173,7 @@ end
 local function handleReply(reply)
   local cmd, arg = reply:match("^ok (%a+) ?([%w_%-]*)")
   if cmd then fleet.cmd, fleet.arg = cmd, arg or "" end        -- kept until the program has acted on it
-  if cmd == "stop" then os.queueEvent("terminate") end
+  if cmd == "stop" then fleet.stopAsked = true; os.queueEvent("terminate") end
   fleet.world, fleet.peers = nil, {}
   for line in reply:gmatch("[^\n]+") do
     local gx, gy, gz, gf = line:match("^goto (-?%d+) (-?%d+) (-?%d+) (%d)$")
@@ -275,7 +275,12 @@ local function runMain(main)
   fleetSend(true)
   local ok, err = pcall(main)
   if not ok then
-    fleet.msg = tostring(err):find("Terminated") and "Stopped (resumes with: carve resume)" or ("Error: " .. tostring(err))
+    if fleet.stopAsked and tostring(err):find("Terminated") then      -- Stop on the Fleet page really stops: no automatic restart afterwards
+      pcall(removeStartup); if STATE_FILE then pcall(fs.delete, STATE_FILE) end
+      fleet.msg = "Stopped from the Fleet page. It will not restart by itself."
+    else
+      fleet.msg = tostring(err):find("Terminated") and "Stopped (resumes with: carve resume)" or ("Error: " .. tostring(err))
+    end
     fleetSend(true)
     error(err, 0)
   end
