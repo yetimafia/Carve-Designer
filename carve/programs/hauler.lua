@@ -1,4 +1,4 @@
--- built by Carve Designer v7.5
+-- built by Carve Designer v7.6
 -- Carve hauler: carries items between the chests of your other jobs. Each leg says where to take items from
 -- (a job's output chest), where to put them (another job's input chest) and which items (part of a name, e.g. "log").
 -- It asks the Designer app where those chests are, walks there (climbing over what is in the way, never digging),
