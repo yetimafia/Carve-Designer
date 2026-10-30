@@ -1,7 +1,7 @@
 {
  "kind": "foreman",
  "name": "Foreman",
- "label": "Victor",
+ "label": "Warden",
  "jobs": [
   {
    "name": "Storage keeper",
@@ -116,6 +116,6 @@
  ],
  "dispatch": true,
  "build": true,
- "agent_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/programs/agent.lua",
+ "agent_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/e928fa9dc68093edb189221b29670c4f556ddc97/carve/programs/agent.lua",
  "launcher_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua"
 }
