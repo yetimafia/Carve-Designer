@@ -1,4 +1,4 @@
--- built by Carve Designer v7.5
+-- built by Carve Designer v7.6
 -- Carve foreman: sets up the other turtles of the colony so you only have to start this one.
 --
 --   1. It asks the Designer app where every job's chests (and furnaces) belong, in this turtle's own frame.
@@ -12,7 +12,7 @@
 
 local args = { ... }
 
-local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Warden", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
+local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/4ad5290e190282d5fae5077da8cd739e25d05aba/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Grey Talon", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
 
 local STATE_FILE = "carve.foreman"
 local TITLE = PLAN.name or "Foreman"
@@ -681,62 +681,16 @@ local function extraJson()
 end
 fleet.extra = extraJson
 
-local STORE = { 4, 8, 12, 13, 14, 15 }                          -- slots outside the crafting grid, used to keep stock
-local hold = {}                                                -- tags the current recipe needs: never sent away to make room
-local ALWAYS = { "turtle", "drive", "disk" }                    -- never sent away: they are the point of all this
-local function isHeld(name)
-  for _, t in ipairs(ALWAYS) do
-    if TAG[t](name) then return true end
-  end
-  for t in pairs(hold) do
-    if TAG[t](name) then return true end
-  end
-  return false
-end
-local function dropAway(s, d)                                  -- a stack to one of the chests (default: the sorting chest on the left)
-  turtle.select(s); turnTo(d or 4); turtle.drop(); turnTo(1); turtle.select(1)
-end
-local function makeRoom(d)                                     -- free one stock slot by sending a stack nobody needs right now away
-  for _, s in ipairs(STORE) do
-    local nm = itemName(s)
-    if nm and not isHeld(nm) then dropAway(s, d); return true end
-  end
-  return false
-end
+-- Everything I own lives in two chests: the materials chest BEHIND me (3) and a sorting chest on my LEFT (4).
+-- This pack only crafts when the grid holds ALL I carry, so every craft is: empty myself into the chests, take exactly the
+-- ingredients, lay them out, craft, put the result into a chest. Nothing is ever carried across a craft.
+local STORE = { 4, 8, 12, 13, 14, 15 }                          -- slots outside the crafting grid
+local ledger = {}                                                -- [direction] = { item name = count }, from the last look into each chest
 
--- take stacks out of chest `fromD` (3 = behind, 4 = left) until I hold `n` of tag; everything else goes to the other chest
-local function fetchFrom(fromD, toD, tag, n)
-  turnTo(fromD)
-  local guard = 0
-  while count(tag) < n and guard < 400 do
-    guard = guard + 1
-    if freeSlots() < 3 then
-      for s = 1, 16 do                                         -- no room: send stacks I don't need now to the other chest
-        local nm = itemName(s)
-        if nm and not TAG[tag](nm) and not isHeld(nm) then dropAway(s, toD); turnTo(fromD) end
-        if freeSlots() >= 3 then break end
-      end
-      if freeSlots() < 3 then break end
-    end
-    local before = snapshot()
-    if not turtle.suck() then break end
-    local after = snapshot()
-    for s = 1, 16 do
-      local a, b = after[s], before[s]
-      if a and (not b or a.count > b.count) and not TAG[tag](a.name) then
-        turtle.select(s); turnTo(toD); turtle.drop(a.count - (b and b.count or 0)); turnTo(fromD)
-      end
-    end
-    turtle.select(1)
-  end
-end
--- what the two chests hold, read through the chest peripheral (no items move). Kept for the Fleet page's Storage tab and for fetch().
-local ledger = {}                                                -- [direction] = { item name = count }
-local lastReport = -99
 local function listChest(d)
   turnTo(d)
   local p = peripheral and peripheral.wrap and peripheral.wrap("front")
-  if not (p and p.list) then return nil end
+  if not (p and p.list) then ledger[d] = nil; return nil end
   local ok, l = pcall(p.list)
   if not ok or type(l) ~= "table" then return nil end
   local items = {}
@@ -746,11 +700,10 @@ local function listChest(d)
 end
 local function inChest(items, tag)
   local n = 0
-  for nm, c in pairs(items) do
-    if TAG[tag](nm) then n = n + c end
-  end
+  for nm, c in pairs(items) do if TAG[tag](nm) then n = n + c end end
   return n
 end
+local lastReport = -99
 local function reportChests(force)                              -- the Foreman shows up on the Storage tab as a read-only warehouse of two chests
   if not fleet.on or not http then return end
   local now = os.clock()
@@ -774,41 +727,76 @@ local function reportChests(force)                              -- the Foreman s
   end)
 end
 
-local function fetch(tag, n)
-  if count(tag) >= n then return true end
-  local have = {}
-  for _, d in ipairs({ 3, 4 }) do                              -- look first: only go through a chest that really holds it
+-- how many of tag I own: in my inventory plus both chests (a fresh look)
+local function stock(tag)
+  local n = count(tag)
+  for _, d in ipairs({ 3, 4 }) do
     local it = listChest(d)
-    have[d] = it and inChest(it, tag) or nil
-  end
-  reportChests(false)
-  local order = { 3, 4 }
-  if (have[4] or 0) > (have[3] or 0) then order = { 4, 3 } end
-  for _, d in ipairs(order) do
-    if have[d] ~= 0 and count(tag) < n then fetchFrom(d, d == 3 and 4 or 3, tag, n) end
+    if it then n = n + inChest(it, tag) end
   end
   turnTo(1)
-  return count(tag) >= n
+  reportChests(false)
+  return n
 end
 
-local function park(s, targets)                                -- move whatever is in slot s out of the crafting grid
-  local nm = itemName(s)
-  if not nm then return true end
-  turtle.select(s)
-  for _, d in ipairs(STORE) do
-    if itemName(d) == nm and turtle.getItemCount(d) < 64 then
-      turtle.transferTo(d)
-      if turtle.getItemCount(s) == 0 then return true end
+-- empty myself into the chests (sorting chest first). keep = a set of slots to leave alone
+local function stash(keep)
+  for s = 1, 16 do
+    if itemName(s) and not (keep and keep[s]) then
+      turtle.select(s)
+      for _, d in ipairs({ 4, 3 }) do
+        turnTo(d); turtle.drop()
+        if turtle.getItemCount(s) == 0 then break end
+      end
     end
   end
-  for _ = 1, 2 do
-    for _, d in ipairs(STORE) do
-      if turtle.getItemCount(d) == 0 then turtle.select(s); turtle.transferTo(d); return true end
+  turtle.select(1)
+  turnTo(1)
+  for s = 1, 16 do if itemName(s) and not (keep and keep[s]) then return false end end
+  return true
+end
+
+-- take stacks from chest d until I hold n of tag; stacks of other things go to the other chest
+local function pullFrom(d, tag, n)
+  local other = d == 3 and 4 or 3
+  turnTo(d)
+  for _ = 1, 60 do
+    local want = n - count(tag)
+    if want <= 0 or freeSlots() < 2 then break end
+    local first                                                -- suck always takes the chest's first stack: only ask for a few when that is what I want
+    local p = peripheral and peripheral.wrap and peripheral.wrap("front")
+    local okL, l = pcall(function() return p.list() end)
+    if okL and type(l) == "table" then
+      local lo
+      for k in pairs(l) do if not lo or k < lo then lo = k end end
+      first = lo and l[lo].name
     end
-    if not makeRoom(4) then break end
+    local wanted = first and TAG[tag](first)
+    local before = snapshot()
+    if not (wanted and turtle.suck(want) or not wanted and turtle.suck()) then break end
+    local after = snapshot()
+    for s = 1, 16 do
+      local a, b = after[s], before[s]
+      if a and (not b or a.count > b.count) and not TAG[tag](a.name) then
+        turtle.select(s); turnTo(other); turtle.drop(a.count - (b and b.count or 0)); turnTo(d)
+      end
+    end
+    turtle.select(1)
   end
-  if not isHeld(nm) then dropAway(s, 4); return true end
-  return false
+  turnTo(1)
+end
+local function take(tag, n)                                      -- bring n of tag into my inventory (it may already be there)
+  if count(tag) >= n then return true end
+  local have = {}
+  for _, d in ipairs({ 3, 4 }) do
+    local it = listChest(d)
+    have[d] = it and inChest(it, tag) or 0
+  end
+  local order = have[4] > have[3] and { 4, 3 } or { 3, 4 }
+  for _, d in ipairs(order) do
+    if have[d] > 0 and count(tag) < n then pullFrom(d, tag, n) end
+  end
+  return count(tag) >= n
 end
 
 local function parseRows(rows)
@@ -830,180 +818,6 @@ local function craftFn()
     end
   end
   return nil
-end
-
--- lay the recipe out in the grid and craft once
-local function craftRowsInner(rows)
-  local cells, want, names, targets = parseRows(rows), {}, {}, {}
-  for i = 1, 9 do
-    local t = cells[i]
-    if t then
-      if not names[t] then
-        local s = slotOfTag(t)
-        names[t] = s and itemName(s)
-      end
-      if not names[t] then return false, "no " .. t end
-      want[i] = names[t]
-      targets[GRID[i]] = true
-    end
-  end
-  for i = 1, 9 do
-    local s = GRID[i]
-    local have = itemName(s)
-    if have and have ~= want[i] then
-      if not park(s, targets) then return false, "inventory full" end
-    end
-  end
-  if turtle.getItemCount(RESULT) > 0 and not park(RESULT, targets) then return false, "inventory full" end
-  for i = 1, 9 do
-    if want[i] and itemName(GRID[i]) ~= want[i] then
-      local donor
-      for d = 1, 16 do
-        if not targets[d] and d ~= RESULT and itemName(d) == want[i] and turtle.getItemCount(d) > 0 then donor = d; break end
-      end
-      if not donor then
-        for d = 1, 16 do
-          if d ~= GRID[i] and itemName(d) == want[i] and turtle.getItemCount(d) > 1 then donor = d; break end
-        end
-      end
-      if not donor then return false, "no " .. cells[i] end
-      turtle.select(donor); turtle.transferTo(GRID[i], 1)
-    end
-  end
-  for s = 1, 16 do                                             -- this pack only crafts when the grid items are ALL the turtle holds: everything else goes to the chest
-    if not targets[s] and itemName(s) then
-      dropAway(s, 4)
-      if itemName(s) then dropAway(s, 3) end                   -- the sorting chest is full: use the materials chest
-      if itemName(s) then return false, "both chests are full: empty the chest on my left" end
-    end
-  end
-  turtle.select(RESULT)
-  local cf = craftFn()
-  if not cf then return false, "no crafting table attached" end
-  local ok, err = cf(1)
-  if not ok then                                                -- try again with the result going to a different slot, and without a limit
-    for _, outSlot in ipairs({ 4, 8, 12, 13 }) do
-      if turtle.getItemCount(outSlot) == 0 then turtle.select(outSlot); break end
-    end
-    ok, err = cf()
-  end
-  turtle.select(1)
-  if not ok then
-    local seen = {}
-    for i = 1, 9 do seen[i] = (itemName(GRID[i]) or "-"):gsub("^%a+:", "") .. "x" .. turtle.getItemCount(GRID[i]) end
-    return false, tostring(err or "no recipe") .. " [" .. table.concat(seen, " ") .. "]"
-  end
-  for i = 1, 9 do park(GRID[i], targets) end                   -- tidy leftovers into other stacks
-  return true
-end
-
-local function craftRows(rows)                                 -- the stacks this recipe uses are never sent away while laying it out
-  local saved, merged = hold, {}
-  for t in pairs(hold) do merged[t] = true end
-  for _, tok in ipairs(rows) do
-    for t in tok:gmatch("%S+") do if t ~= "-" then merged[t] = true end end
-  end
-  hold = merged
-  local ok, why = craftRowsInner(rows)
-  hold = saved
-  return ok, why
-end
-
-local ensureHave
-local function craftOnce(tag)
-  local need = {}
-  for _, tok in ipairs(R[tag].rows) do
-    for t in tok:gmatch("%S+") do if t ~= "-" then need[t] = (need[t] or 0) + 1 end end
-  end
-  crafting[#crafting + 1] = tag
-  if fleetSend then fleetSend(false) end                      -- the Foreman tab shows what is being crafted
-  local saved = hold
-  hold = {}
-  for t in pairs(saved) do hold[t] = true end                  -- what the outer recipe already gathered stays safe
-  for t in pairs(need) do hold[t] = true end
-  for _ = 1, 6 do                                              -- gathering one ingredient may make room by sending another away
-    local all = true
-    for t, occ in pairs(need) do
-      ensureHave(t, occ)
-      if count(t) < occ then all = false end
-    end
-    if all then break end
-  end
-  local ok, why = craftRows(R[tag].rows)
-  hold = saved
-  crafting[#crafting] = nil
-  if ok then recent[#recent + 1] = tag end
-  if not ok then error("could not craft " .. tag .. ": " .. tostring(why), 0) end
-end
-
-local function whereIs(tag)                                    -- what the last look into the chests found, for the error screens
-  local a, b = 0, 0
-  for nm, c in pairs(ledger[3] or {}) do if TAG[tag](nm) then a = a + c end end
-  for nm, c in pairs(ledger[4] or {}) do if TAG[tag](nm) then b = b + c end end
-  return "back " .. a .. " left " .. b .. " free " .. freeSlots()
-end
-ensureHave = function(tag, n)
-  local first, tries = true, 0
-  while count(tag) < n do
-    local r = R[tag]
-    if first then fetch(tag, n) end                       -- earlier crafts may have sent it to the chest
-    first = false
-    if count(tag) >= n then break end
-    if r and tries >= n + 2 then                          -- crafting keeps not giving me what I need: stop using up the materials
-      fetch(tag, n)
-      if count(tag) < n then
-        say(TITLE, "", "Crafting " .. (WORDS[tag] or tag) .. " does not give me " .. (WORDS[tag] or tag) .. " in this pack.",
-          "I stopped so no materials are wasted.", "Put " .. (n - count(tag)) .. " " .. (WORDS[tag] or tag) .. " in the chest behind me.")
-        sleep(10)
-      end
-    elseif r then
-      tries = tries + 1
-      local ok, e = pcall(craftOnce, tag)
-      if ok then fetch(tag, n)                                 -- the craft sent what it made to the chest with everything else: take it back
-      else                                           -- this pack may not allow the recipe: ask for the finished item instead of crashing
-        e = tostring(e)
-        if e:find("Terminated") then error(e, 0) end
-        fetch(tag, n)
-        if count(tag) < n then
-          say(TITLE, "", "Can't craft " .. (WORDS[tag] or tag) .. " here:", e:gsub("^could not craft %w+: ", ""):sub(1, 40),
-            "Put " .. (n - count(tag)) .. " more " .. (WORDS[tag] or tag) .. " in the chest behind me.", whereIs(tag))
-          sleep(10)
-        end
-      end
-    else
-      fetch(tag, n)
-      if count(tag) < n then
-        say(TITLE, "", "Out of " .. (WORDS[tag] or tag) .. ": need " .. (n - count(tag)) .. " more.", "Put them in the chest behind me.", "Waiting... " .. whereIs(tag))
-        sleep(10)
-      end
-    end
-  end
-end
-
--- a turtle with a pickaxe (and a crafting table when crafty): the upgrade recipes take the tool and the turtle side by side
-local function upgrade(toolTag)
-  local lastWhy
-  hold = { turtle = true, [toolTag] = true }
-  ensureHave(toolTag, 1)
-  ensureHave("turtle", 1)
-  for _ = 1, 3 do                                              -- crafting sends the other items to the chest: bring both back for the upgrade
-    if count(toolTag) < 1 then fetch(toolTag, 1) end
-    if count("turtle") < 1 then fetch("turtle", 1) end
-  end
-  for _, rows in ipairs({ toolTag == "pickaxe" and { "pickaxe turtle -", "- - -", "- - -" } or { "ctable turtle -", "- - -", "- - -" },
-                          toolTag == "pickaxe" and { "turtle pickaxe -", "- - -", "- - -" } or { "turtle ctable -", "- - -", "- - -" } }) do
-    local ok, why = craftRows(rows)
-    if ok then hold = {}; return true end
-    lastWhy = why
-  end
-  hold = {}
-  error("could not fit the " .. toolTag .. " on the turtle: " .. tostring(lastWhy), 0)
-end
-
-local function makeTurtle(crafty)
-  ensureHave("turtle", 1)
-  upgrade("pickaxe")
-  if crafty then upgrade("ctable") end
 end
 
 local function isMachine(n) return n and (n:find("turtle", 1, true) or n:find("computer", 1, true) or n:find("disk_drive", 1, true)) end
@@ -1057,21 +871,185 @@ local function reuseDrive()
   return false
 end
 
+local function bootNew()
+  turnTo(1)
+  local t = peripheral and peripheral.wrap("front")
+  if not (t and t.turnOn) then return nil end
+  t.turnOn()
+  local id
+  for _ = 1, 20 do
+    id = t.getID and t.getID()
+    if id and id > 0 then return id end
+    sleep(1)
+  end
+  return nil
+end
+
+local function doneList()
+  local text = readFile("carve.foreman.done") or ""
+  local set = {}
+  for line in text:gmatch("[^\n]+") do set[line] = true end
+  return set
+end
+local function markDone(name)
+  local text = readFile("carve.foreman.done") or ""
+  writeFile("carve.foreman.done", text .. name .. "\n")
+end
+
+local function waitFor(what, fn, seconds)
+  local waited = 0
+  while waited < seconds do
+    if fn() then return true end
+    say(TITLE, "", "Waiting " .. what, math.floor(waited) .. " s of " .. seconds .. " s")
+    sleep(3)
+    waited = waited + 3
+  end
+  return false
+end
+
+-- lay a recipe out and craft it once. The ingredients come out of the chests in exactly the right numbers, so nothing is left
+-- over; the result goes back into a chest. Returns true, or false and why.
+local function craftGrid(rows)
+  local cells, total = parseRows(rows), {}
+  for i = 1, 9 do if cells[i] then total[cells[i]] = (total[cells[i]] or 0) + 1 end end
+  if not stash() then return false, "both chests are full: empty the chest on my left" end
+  for t, c in pairs(total) do
+    take(t, c)
+    if count(t) < c then stash(); return false, "no " .. t end
+  end
+  local isStore, isGrid = {}, {}
+  for _, s in ipairs(STORE) do isStore[s] = true end
+  for _, g in ipairs(GRID) do isGrid[g] = true end
+  for s = 1, 16 do                                             -- every stack into the store slots first: the grid is only for the layout
+    local nm = itemName(s)
+    if nm and not isStore[s] then
+      local dest
+      for _, d in ipairs(STORE) do
+        if itemName(d) == nm and turtle.getItemCount(d) < 64 then dest = d; break end
+      end
+      for _, d in ipairs(STORE) do
+        if not dest and turtle.getItemCount(d) == 0 then dest = d end
+      end
+      if not dest then stash(); return false, "inventory full" end
+      turtle.select(s); turtle.transferTo(dest)
+    end
+  end
+  for i = 1, 9 do
+    local t = cells[i]
+    if t then
+      local donor
+      for _, s in ipairs(STORE) do
+        local nm = itemName(s)
+        if not donor and nm and TAG[t](nm) then donor = s end
+      end
+      if not donor then stash(); return false, "no " .. t end
+      turtle.select(donor); turtle.transferTo(GRID[i], 1)
+    end
+  end
+  stash(isGrid)                                                -- the grid must hold everything I carry
+  local cf = craftFn()
+  if not cf then stash(); return false, "no crafting table attached" end
+  turtle.select(RESULT)
+  local ok, err = cf(1)
+  if not ok then ok, err = cf() end
+  turtle.select(1)
+  local seen = {}
+  if not ok then
+    for i = 1, 9 do seen[i] = (itemName(GRID[i]) or "-"):gsub("^%a+:", "") .. "x" .. turtle.getItemCount(GRID[i]) end
+  end
+  stash()
+  if ok then return true end
+  return false, tostring(err or "no recipe") .. " [" .. table.concat(seen, " ") .. "]"
+end
+
+local need
+local function craftOnce(tag)
+  local total = {}
+  for _, row in ipairs(R[tag].rows) do
+    for t in row:gmatch("%S+") do if t ~= "-" then total[t] = (total[t] or 0) + 1 end end
+  end
+  crafting[#crafting + 1] = tag
+  if fleetSend then fleetSend(false) end                       -- the Foreman tab shows what is being crafted
+  for _ = 1, 2 do
+    for t, c in pairs(total) do need(t, c) end                 -- every ingredient waits in a chest; a second round catches one that another craft used up
+  end
+  local ok, why = craftGrid(R[tag].rows)
+  crafting[#crafting] = nil
+  if ok then recent[#recent + 1] = tag end
+  return ok, why
+end
+
+-- make sure I own n of tag (in the chests): craft what is missing, or wait for the person to put more in the chest
+need = function(tag, n)
+  local have = stock(tag)
+  local tries, allowed = 0, n - have + 2                       -- more crafts than the shortage needs: this pack does not give me the item, so stop wasting materials
+  while have < n do
+    local why
+    if R[tag] and tries < allowed then
+      tries = tries + 1
+      local ok
+      ok, why = craftOnce(tag)
+      if ok then why = nil end
+    end
+    have = stock(tag)
+    if have < n and (why or not R[tag] or tries >= allowed) then
+      local word = WORDS[tag] or tag
+      local where = "back " .. inChest(ledger[3] or {}, tag) .. " left " .. inChest(ledger[4] or {}, tag)
+      if why then
+        say(TITLE, "", "Can't craft " .. word .. " here:", tostring(why):sub(1, 40), "Put " .. (n - have) .. " more " .. word .. " in the chest behind me.", where)
+      elseif R[tag] then
+        say(TITLE, "", "Crafting " .. word .. " does not give me " .. word .. " in this pack.", "Put " .. (n - have) .. " " .. word .. " in the chest behind me.", where)
+      else
+        say(TITLE, "", "Out of " .. word .. ": need " .. (n - have) .. " more.", "Put them in the chest behind me.", "Waiting... " .. where)
+      end
+      sleep(10)
+    end
+  end
+end
+
+-- a turtle with a pickaxe (or a crafting table): the upgrade recipes take the tool and the turtle side by side
+local function upgrade(tool)
+  need(tool, 1); need("turtle", 1)
+  local last
+  for _, rows in ipairs({ { tool .. " turtle -", "- - -", "- - -" }, { "turtle " .. tool .. " -", "- - -", "- - -" } }) do
+    local ok, why = craftGrid(rows)
+    if ok then return end
+    last = why
+  end
+  error("could not fit the " .. tool .. " on the turtle: " .. tostring(last), 0)
+end
+local function makeTurtle(crafty)
+  need("turtle", 1)
+  upgrade("pickaxe")
+  if crafty then upgrade("ctable") end
+end
+
+-- eat some of the chest's coal so I can walk (stepping up to the disk drive and back, placing chests); the rest goes back
+local function topUpFuel(target)
+  local lvl = turtle.getFuelLevel()
+  if lvl == "unlimited" then return end
+  target = math.min(target or 1000, turtle.getFuelLimit())
+  if lvl >= target then return end
+  act("refuelling")
+  say(TITLE, "", "Getting some fuel from the chest...", "fuel " .. tostring(lvl) .. " of " .. target)
+  take("coal", math.max(1, math.ceil((target - lvl) / 80)))
+  burn(target)
+  stash()
+end
+
+-- the disk drive with its floppy: crafted once, stays above the cell in front of me for every turtle
 local function ensureDrive()
   if driveReady then return end
   if reuseDrive() then driveReady = true; return end
-  hold = { drive = true, disk = true, hopper = true }
-  for _ = 1, 4 do                                              -- a craft sends the other items to the chest: take them back
-    ensureHave("drive", 1); ensureHave("disk", 1); ensureHave("hopper", 1)
-    if count("drive") >= 1 and count("disk") >= 1 and count("hopper") >= 1 then break end
-    if count("drive") < 1 then fetch("drive", 1) end
-    if count("disk") < 1 then fetch("disk", 1) end
-    if count("hopper") < 1 then fetch("hopper", 1) end
+  for _ = 1, 3 do                                              -- craft all three into the chests first (a craft empties me), then take them
+    need("drive", 1); need("disk", 1); need("hopper", 1)
+    if stock("drive") >= 1 and stock("disk") >= 1 and stock("hopper") >= 1 then break end
   end
-  hold = {}
+  stash()
+  take("drive", 1); take("disk", 1); take("hopper", 1)
   step(5)
   clearFront()
-  turtle.select(slotOfTag("drive"))
+  turtle.select(slotOfTag("drive") or 1)
   local placedDrive, whyDrive = turtle.place()
   turtle.select(1)
   if not placedDrive then error("could not place the disk drive: " .. tostring(whyDrive), 0) end
@@ -1094,10 +1072,12 @@ local function ensureDrive()
       turtle.select(1)
     end
     if not slotOfTag("disk") then                              -- the chests are down at the working level: go back, craft one, come up again
+      local hadHopper = slotOfTag("hopper") ~= nil
       step(6)
-      hold = { drive = true, disk = true }
-      ensureHave("disk", 1)
-      hold = {}
+      stash()
+      need("disk", 1)
+      take("disk", 1)
+      if hadHopper then take("hopper", 1) end
       turnTo(1)
       step(5)
     end
@@ -1155,9 +1135,7 @@ local function ensureDrive()
     local okI, blk = turtle.inspect()
     notes[#notes + 1] = "front " .. (okI and blk and tostring(blk.name):gsub("^%a+:", "") or "nothing")
     notes[#notes + 1] = "type " .. tostring(peripheral and peripheral.getType and peripheral.getType("front"))
-  end
-  if not inserted then                                         -- neither worked: ask the person standing there
-    for waited = 0, 300, 3 do
+    for waited = 0, 300, 3 do                                   -- neither worked: ask the person standing there
       if present() then inserted = true; break end
       local sl = slotOfTag("disk")
       say(TITLE, "", "Put the floppy in the disk drive in front of me.", sl and ("Take it from my slot " .. sl .. " and right-click the drive.") or "Pick it up from the ground and right-click the drive.", "Waiting... " .. waited .. " s", table.concat(notes, "; "))
@@ -1167,9 +1145,8 @@ local function ensureDrive()
   local d = present()
   local mount = d and d.getMountPath and d.getMountPath()
   if not mount then error("the disk drive did not take the floppy", 0) end
-  local text = startupText()
   local f = fs.open(mount .. "/startup.lua", "w")
-  f.write(text); f.close()
+  f.write(startupText()); f.close()
   step(6)
   driveReady = true
 end
@@ -1177,9 +1154,7 @@ end
 -- A new turtle does not take items from my hands (a turtle is no chest to drop into), so its starter kit goes into a CHEST standing
 -- in front of the cell it will be placed in; the new turtle empties that chest by itself when it starts, then I take the chest back.
 local function giveKit(job)
-  turnTo(1)
-  local want = { { "coal", 16 } }
-  local hasChest = false
+  local want, hasChest = { { "coal", 16 } }, false
   for _, k in ipairs(job.kit or {}) do
     if TAG[k[1]] and k[2] > 0 then
       want[#want + 1] = { k[1], k[2] + (k[1] == "chest" and 1 or 0) }          -- one more chest: the one that carries the kit
@@ -1187,16 +1162,12 @@ local function giveKit(job)
     end
   end
   if not hasChest then want[#want + 1] = { "chest", 1 } end
-  table.sort(want, function(x, y) local rx, ry = R[x[1]] and 0 or 1, R[y[1]] and 0 or 1; if rx ~= ry then return rx < ry end return x[1] < y[1] end)
-  hold = {}
-  for _, k in ipairs(want) do hold[k[1]] = true end            -- gathering one kind must not send away another; crafted things first (crafting empties the inventory)
-  for _ = 1, 6 do
-    for _, k in ipairs(want) do ensureHave(k[1], k[2]) end
-    local all = true
-    for _, k in ipairs(want) do                                -- a later craft may have sent an earlier item away: look again at the end
-      if count(k[1]) < k[2] then all = false end
-    end
-    if all then break end
+  for _ = 1, 2 do
+    for _, k in ipairs(want) do need(k[1], k[2]) end           -- all of it waits in the chests; a second round catches one a craft used up
+  end
+  stash()
+  for _, k in ipairs(want) do
+    if not take(k[1], k[2]) then error("the kit for " .. job.name .. " is short of " .. (WORDS[k[1]] or k[1]), 0) end
   end
   step(1)                                                       -- onto the cell the new turtle will stand on; the chest goes one further
   turnTo(1)
@@ -1224,12 +1195,12 @@ local function giveKit(job)
     end
     turtle.select(1)
   end
-  hold = {}
   step(3)
   turnTo(1)
+  stash()                                                       -- whatever is left over goes back to the chests
 end
 
--- take the empty kit chest back (the new turtle has left): I need it again for the next one
+-- take the empty kit chest back (the new turtle has left): it is used again for the next one
 local function takeKitChest()
   step(1)
   turnTo(1)
@@ -1237,71 +1208,15 @@ local function takeKitChest()
   if okI and type(blk) == "table" and tostring(blk.name):find("chest", 1, true) then turtle.dig() end
   step(3)
   turnTo(1)
-end
-
-local function bootNew()
-  turnTo(1)
-  local t = peripheral and peripheral.wrap("front")
-  if not (t and t.turnOn) then return nil end
-  t.turnOn()
-  local id
-  for _ = 1, 20 do
-    id = t.getID and t.getID()
-    if id and id > 0 then return id end
-    sleep(1)
-  end
-  return nil
-end
-
-local function doneList()
-  local text = readFile("carve.foreman.done") or ""
-  local set = {}
-  for line in text:gmatch("[^\n]+") do set[line] = true end
-  return set
-end
-local function markDone(name)
-  local text = readFile("carve.foreman.done") or ""
-  writeFile("carve.foreman.done", text .. name .. "\n")
-end
-
-local function waitFor(what, fn, seconds)
-  local waited = 0
-  while waited < seconds do
-    if fn() then return true end
-    say(TITLE, "", "Waiting " .. what, math.floor(waited) .. " s of " .. seconds .. " s")
-    sleep(3)
-    waited = waited + 3
-  end
-  return false
-end
-
--- eat some of the chest's coal right away so the Foreman can walk (stepping up to the disk drive and back, placing chests); the rest goes back
-local function topUpFuel(target)
-  local lvl = turtle.getFuelLevel()
-  if lvl == "unlimited" then return end
-  target = math.min(target or 1000, turtle.getFuelLimit())
-  if lvl >= target then return end
-  act("refuelling")
-  say(TITLE, "", "Getting some fuel from the chest...", "fuel " .. tostring(lvl) .. " of " .. target)
-  if count("coal") < 1 then fetch("coal", math.max(1, math.ceil((target - lvl) / 80))) end
-  burn(target)
-  for sl = 1, 16 do                                            -- what I did not need goes back (the new turtles' kits use it later)
-    local nm = itemName(sl)
-    if nm and TAG.coal(nm) and turtle.getItemCount(sl) > 8 then
-      turtle.select(sl)
-      turnTo(3); turtle.drop(turtle.getItemCount(sl) - 8); turnTo(1)
-    end
-  end
-  turtle.select(1)
-  turnTo(1)
+  stash()
 end
 
 local function buildAll(problems)
-  topUpFuel(1000)
   ensureChest(3, "materials")
   ensureChest(4, "sorting")
   listChest(3); listChest(4); turnTo(1)
-  reportChests(true)                                           -- what is in the chests, for the Storage tab and for the fetches below
+  reportChests(true)                                           -- what is in the chests, for the Storage tab
+  topUpFuel(1000)
   local done = doneList()
   local todo = {}
   for _, j in ipairs(PLAN.jobs) do
@@ -1315,12 +1230,12 @@ local function buildAll(problems)
     if jobQ[i] and jobQ[i].s ~= "done" then jobQ[i].s = "now" end
     if not done[j.name] then
       say(TITLE, "", "Building the turtle for " .. j.name, i .. " of " .. #todo)
+      topUpFuel(400)
       makeTurtle(j.crafty)
       ensureDrive()
       giveKit(j)                                                -- the kit waits in a chest in front of the cell the new turtle will take
-      hold = { turtle = true }
-      if count("turtle") < 1 then fetch("turtle", 1) end   -- crafting the floppy sent it to the chest with the rest
-      hold = {}
+      stash()
+      take("turtle", 1)
       clearFront()
       turtle.select(slotOfTag("turtle") or 1)
       if not turtle.place() then
