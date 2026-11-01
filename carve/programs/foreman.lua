@@ -1,4 +1,4 @@
--- built by Carve Designer v8.1
+-- built by Carve Designer v8.5
 -- Carve foreman: sets up the other turtles of the colony so you only have to start this one.
 --
 --   1. It asks the Designer app where every job's chests (and furnaces) belong, in this turtle's own frame.
@@ -9,10 +9,23 @@
 -- Needs: live reporting, its own start position (Fleet tab, Colony tab or GPS), the start position of every job
 -- (Colony tab: Lay out), the chests and furnaces listed in the Colony tab in its inventory, and some coal.
 -- Run again with  stop  to cancel the automatic restart.
+--
+-- VERSION NOTES
+--   - The Foreman is the only turtle that is made by hand. It crafts every other turtle from a chest of materials, boots it, gives it a kit
+--     and sends it to its job site.
+--   - Up to 7.5 it carried ingredients between crafts and kept re-crafting what it had just put away (it wasted iron on extra hoppers).
+--     7.6 rewrote the build mode: everything lives in the two chests, and every craft empties the turtle, takes EXACTLY the
+--     ingredients, crafts and stores the result (craftGrid). need(tag, n) crafts only what is missing and stops after a few failed tries.
+--   - Why 'empty first': in this modpack turtle.craft only works when the whole inventory outside the 3x3 grid is empty, and the
+--     result lands in slot 16.
+--   - Why a hopper (7.4): turtle.drop / place into a disk drive does not insert a floppy here, but a hopper above the drive does.
+--   - Why a kit CHEST: turtle.drop into another turtle does not insert here either.
+--   - 8.1: job sites are offsets from the Foreman (not typed coordinates).
+--   - 8.4: before building it gathers what the chests are missing (trees, stone, ore, sand, cane) and smelts it; see auto_gather.lua.
 
 local args = { ... }
 
-local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/programs/agent.lua", build = true, dispatch = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Lash", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman"}
+local PLAN = {agent_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/446df1c59bec3add1697151ba1f92ee651425933/carve/programs/agent.lua", build = true, dispatch = true, gather = true, jobs = {{crafty = false, foot = {-2, -1, -2, 2, 2, 4}, furnaces = 0, kind = "keeper", kit = {{"chest", 8}}, name = "Storage keeper", slug = "storage_keeper"}, {crafty = false, foot = {-3, -1, -2, 10, 9, 10}, furnaces = 0, kind = "treefarm", kit = {{"sapling", 4}, {"chest", 1}}, name = "Tree farm", slug = "tree_farm"}, {crafty = false, foot = {-2, -1, -2, 3, 2, 4}, furnaces = 2, kind = "smelter", kit = {{"furnace", 2}, {"chest", 2}}, name = "Smelter", slug = "smelter"}, {crafty = true, foot = {-2, -1, -2, 2, 2, 2}, furnaces = 0, kind = "crafter", kit = {{"chest", 2}}, name = "Compressor", slug = "compressor"}, {crafty = false, foot = false, furnaces = 0, kind = "hauler", kit = {}, name = "Hauler", slug = "hauler"}, {crafty = false, foot = false, furnaces = 0, kind = "scout", kit = {}, name = "Scout", slug = "scout"}}, kind = "foreman", label = "Lash", launcher_url = "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua", live = "http://127.0.0.1:8765", name = "Foreman", needs = {cane = 3, cobble = 16, diamond = 18, glass = 6, iron = 47, log = 45, redstone = 11, sapling = 4, stone = 49}, radius = 30}
 
 local STATE_FILE = "carve.foreman"
 local TITLE = PLAN.name or "Foreman"
@@ -20,6 +33,9 @@ local FUEL_HINT = "coal or charcoal"
 local BURN = { "coal", "charcoal" }
 local KEEP = {}
 
+-- Shared by every turtle program (it is pasted into each program at its COMMON marker): position tracking, safe movement, fuel,
+-- the Fleet reporting (fleetSend) and the screen helper (say).
+-- Versions: 7.8 Stop from the Fleet page removes the automatic restart; 8.0 every turtle reports its inventory; 8.2 burn() uses charcoal first.
 ---------------------------------------------------------------- shared helpers (position, moving, fuel)
 -- directions: 1 = +z (forward at start), 2 = +x (right), 3 = -z (back), 4 = -x (left), 5 = up, 6 = down
 -- every turtle names itself after a Deadlock hero (by its id) the first time it starts, if it has no label yet
@@ -146,9 +162,17 @@ local function mapSee()
   mapMoves = mapMoves + 1
   local n = mapInspect(turtle.inspect)
   if n then mapNote(pos.x + DX[face], pos.y, pos.z + DZ[face], n) end
-  if mapMoves % 4 == 0 then
+  if mapMoves % 2 == 0 then
     n = mapInspect(turtle.inspectUp); if n then mapNote(pos.x, pos.y + 1, pos.z, n) end
     n = mapInspect(turtle.inspectDown); if n then mapNote(pos.x, pos.y - 1, pos.z, n) end
+  end
+  if mapMoves % 10 == 0 then                                  -- v8.4: now and then look left and right too (the turns cancel out, so my facing is unchanged)
+    local l, r = (face + 2) % 4 + 1, face % 4 + 1
+    turtle.turnLeft()
+    n = mapInspect(turtle.inspect); if n then mapNote(pos.x + DX[l], pos.y, pos.z + DZ[l], n) end
+    turtle.turnRight(); turtle.turnRight()
+    n = mapInspect(turtle.inspect); if n then mapNote(pos.x + DX[r], pos.y, pos.z + DZ[r], n) end
+    turtle.turnLeft()
   end
 end
 local function mapFlush(force)
@@ -178,6 +202,7 @@ end
 local function handleReply(reply)
   local cmd, arg = reply:match("^ok (%a+) ?([%w_%-]*)")
   if cmd then fleet.cmd, fleet.arg = cmd, arg or "" end        -- kept until the program has acted on it
+  -- v7.8: a Stop from the Fleet page must stay stopped. Before, the turtle's startup file restarted the program the next time the world was opened.
   if cmd == "stop" then fleet.stopAsked = true; os.queueEvent("terminate") end
   fleet.world, fleet.peers = nil, {}
   for line in reply:gmatch("[^\n]+") do
@@ -214,6 +239,7 @@ local function fleetSend(force)
   if fleet.extra then                                          -- a program may add fields (the Foreman: inventory and crafting queue)
     local okx, frag = pcall(fleet.extra)
     if okx and type(frag) == "string" then body = body .. frag end
+  -- v8.0: every turtle reports what it carries (slot, item, count) and whether it can craft, for the Inventory tab. Rate-limited: 16 inventory calls per report is not free.
   elseif turtle and turtle.getItemDetail and (force or now - (fleet.invAt or -100) > 8) then      -- everybody else: what I carry (the Fleet page's inventory tab)
     fleet.invAt = now
     local inv = {}
@@ -322,21 +348,21 @@ local function isProtected(data)
 end
 
 -- burn items whose name contains one of BURN (a list) until the turtle has `target` fuel
+-- v8.2: charcoal is burned before coal. Charcoal is made from logs by the smelter, so coal is kept for when nothing else is left.
 local function burn(target)
   local lvl = turtle.getFuelLevel()
   if lvl == "unlimited" then return end
   target = math.min(target, turtle.getFuelLimit())
-  for s = 1, 16 do
-    if turtle.getFuelLevel() >= target then break end
-    local n = itemName(s)
-    if n then
-      for _, w in ipairs(BURN) do
-        if n:find(w, 1, true) and not (KEEP and KEEP[s]) then
-          turtle.select(s)
-          while turtle.getItemCount(s) > 0 and turtle.getFuelLevel() < target do
-            if not turtle.refuel(1) then break end
-          end
-          break
+  local words = { "charcoal" }                                -- charcoal first: it is made from logs, so coal is saved for when it is needed
+  for _, w in ipairs(BURN) do if w ~= "charcoal" then words[#words + 1] = w end end
+  for _, w in ipairs(words) do
+    for s = 1, 16 do
+      if turtle.getFuelLevel() >= target then break end
+      local n = itemName(s)
+      if n and n:find(w, 1, true) and not (KEEP and KEEP[s]) then
+        turtle.select(s)
+        while turtle.getItemCount(s) > 0 and turtle.getFuelLevel() < target do
+          if not turtle.refuel(1) then break end
         end
       end
     end
@@ -623,6 +649,8 @@ local TAG = {
   disk = function(n) return n == "computercraft:disk" or (n:find("floppy", 1, true) ~= nil) end,
   hopper = function(n) return n == "minecraft:hopper" end,
   bonemeal = function(n) return n == "minecraft:bone_meal" end,
+  rawiron = function(n) return n == "minecraft:raw_iron" or n == "minecraft:iron_ore" end,     -- v8.4: things I gather and smelt
+  sand = function(n) return n == "minecraft:sand" end,
 }
 -- recipes: three rows of three tags ("-" = empty). supply = a ready-made one may be waiting in the chest
 local R = {
@@ -642,7 +670,7 @@ local R = {
 }
 local WORDS = { log = "logs", planks = "planks", stone = "stone", cobble = "cobblestone", iron = "iron ingots", redstone = "redstone",
   glass = "glass", pane = "glass panes", diamond = "diamonds", stick = "sticks", cane = "sugar cane", paper = "paper", coal = "coal",
-  sapling = "saplings", hopper = "hoppers", chest = "chests", furnace = "furnaces", bonemeal = "bone meal" }
+  sapling = "saplings", rawiron = "raw iron", sand = "sand", hopper = "hoppers", chest = "chests", furnace = "furnaces", bonemeal = "bone meal" }
 
 local function count(tag)
   local n = 0
@@ -776,6 +804,8 @@ local function pullFrom(d, tag, n)
   for _ = 1, 60 do
     local want = n - count(tag)
     if want <= 0 or freeSlots() < 2 then break end
+    -- v7.6: turtle.suck(n) always takes the chest's FIRST stack, so asking for 1 item of something that is not first just moves the
+    -- wrong stack around. We look at p.list() first and only limit the amount when the first stack is what we want.
     local first                                                -- suck always takes the chest's first stack: only ask for a few when that is what I want
     local p = peripheral and peripheral.wrap and peripheral.wrap("front")
     local okL, l = pcall(function() return p.list() end)
@@ -922,6 +952,8 @@ end
 
 -- lay a recipe out and craft it once. The ingredients come out of the chests in exactly the right numbers, so nothing is left
 -- over; the result goes back into a chest. Returns true, or false and why.
+-- v7.6: replaces the old craftRows/ensureHave pair. The ingredients are pulled out in exactly the right numbers, so nothing is left over
+-- and the inventory outside the grid really is empty when turtle.craft is called.
 local function craftGrid(rows)
   local cells, total = parseRows(rows), {}
   for i = 1, 9 do if cells[i] then total[cells[i]] = (total[cells[i]] or 0) + 1 end end
@@ -1038,6 +1070,7 @@ local function makeTurtle(crafty)
 end
 
 -- eat some of the chest's coal so I can walk (stepping up to the disk drive and back, placing chests); the rest goes back
+-- v7.x: the Foreman eats coal from the chest at the start so it can walk (stepping up to the drive, placing chests); it tops up again before each turtle.
 local function topUpFuel(target)
   local lvl = turtle.getFuelLevel()
   if lvl == "unlimited" then return end
@@ -1051,6 +1084,8 @@ local function topUpFuel(target)
 end
 
 -- the disk drive with its floppy: crafted once, stays above the cell in front of me for every turtle
+-- v7.4: the floppy is loaded through a hopper placed on top of the disk drive (needs 5 iron + a chest). v7.3 corrected the drive recipe to the
+-- real 7 stone + 2 redstone (a ring of 8 stone around redstone is a WIRED MODEM and wasted stone).
 local function ensureDrive()
   if driveReady then return end
   if reuseDrive() then driveReady = true; return end
@@ -1166,6 +1201,8 @@ end
 
 -- A new turtle does not take items from my hands (a turtle is no chest to drop into), so its starter kit goes into a CHEST standing
 -- in front of the cell it will be placed in; the new turtle empties that chest by itself when it starts, then I take the chest back.
+-- v7.x (before 7.3): the starter kit goes into a chest in front of the new turtle because dropping items into a turtle does nothing here.
+-- The new turtle empties the chest (collectKit in auto_agent.lua) and the Foreman takes the chest back afterwards.
 local function giveKit(job)
   local want, hasChest = { { "coal", 16 } }, false
   for _, k in ipairs(job.kit or {}) do
@@ -1223,6 +1260,574 @@ local function takeKitChest()
   turnTo(1)
   stash()
 end
+
+-- ===== v8.4: the Foreman gathers its own materials =====
+-- Included into the Foreman (marker GATHER in auto_foreman.lua). Everything is stock-based: it counts what the two chests and my inventory
+-- hold, works out what is still missing for the whole colony (PLAN.needs, tags like the TAG table) and goes and gets it:
+--   1. surface sweep (lanes 3 apart, so every tree/cane/sand block within reach is next to a lane): chops trees (climbing the trunk and
+--      breaking leaves for saplings), cuts sugar cane, digs sand
+--   2. a shaft straight down from the start with a branch-mining network at a stone level (cobblestone), then another at the bottom of
+--      the world (iron, redstone, diamonds, coal). Every ore it sees is followed through the whole vein.
+--   3. three furnaces beside the start smelt raw iron, cobblestone and sand (coal from the chest or from what it mined is the fuel)
+-- Why bedrock + 4: below y 0 the stone is deepslate and drops cobbled deepslate, so cobblestone comes from the shallow level; diamonds and
+-- redstone are most common right above bedrock, and finding bedrock needs no absolute coordinates.
+local gatherAll
+do
+  local OPP = { 3, 4, 1, 2, 6, 5 }
+  local GFURN = 3                                              -- furnaces used for smelting
+  local WATCH = { "log", "planks", "sapling", "cobble", "stone", "rawiron", "iron", "redstone", "diamond", "sand", "glass", "cane", "coal", "furnace" }
+  local JUNK = {}
+  for _, n in ipairs({ "dirt", "coarse_dirt", "grass_block", "gravel", "andesite", "diorite", "granite", "tuff", "deepslate", "cobbled_deepslate",
+    "netherrack", "flint", "rotten_flesh", "bone", "string", "spider_eye", "arrow", "gunpowder", "poisonous_potato", "apple", "raw_copper",
+    "raw_gold", "copper_ingot", "gold_ingot", "lapis_lazuli", "emerald", "amethyst_shard", "calcite", "clay_ball", "wheat_seeds", "snowball",
+    "sandstone", "red_sand", "stick", "dripstone_block", "pointed_dripstone", "moss_block", "clay" }) do JUNK[n] = true end
+  local owned, last = {}, {}
+  local where = "surface"                                      -- "surface" or "mine": how to get home when full
+  local needs = {}
+
+  local function nm(data) return type(data) == "table" and tostring(data.name or "") or "" end
+  local function short(n) return (tostring(n):gsub("^%a+:", "")) end
+  local function look(d)                                       -- every look also goes to the shared 3D map (v8.4)
+    local ok, data
+    if d == 5 then ok, data = turtle.inspectUp() elseif d == 6 then ok, data = turtle.inspectDown() else turnTo(d); ok, data = turtle.inspect() end
+    if MAP_SHARE then mapNote(pos.x + DX[d], pos.y + DY[d], pos.z + DZ[d], ok and nm(data) or "air") end
+    return ok, data
+  end
+  local function dig(d)
+    if d == 5 then return turtle.digUp() elseif d == 6 then return turtle.digDown() end
+    turnTo(d)
+    return turtle.dig()
+  end
+  local function liquid(n) return n:find("lava", 1, true) or n:find("water", 1, true) end
+
+  -- ---- bookkeeping: what I own in total (inventory + both chests), updated as items arrive.
+  -- Every inventory look costs a game tick per slot, so everything is counted in one pass and only when something was dug (dirty).
+  local dirty = true
+  local function invTotals()
+    local t = {}
+    for _, tg in ipairs(WATCH) do t[tg] = 0 end
+    for s = 1, 16 do
+      local n = itemName(s)
+      if n then
+        local c = turtle.getItemCount(s)
+        for _, tg in ipairs(WATCH) do if TAG[tg](n) then t[tg] = t[tg] + c end end
+      end
+    end
+    return t
+  end
+  local function totals()                                      -- inventory + both chests, for the home visits
+    local t = invTotals()
+    for _, d in ipairs({ 3, 4 }) do
+      local it = listChest(d)
+      if it then
+        for n, c in pairs(it) do
+          for _, tg in ipairs(WATCH) do if TAG[tg](n) then t[tg] = t[tg] + c end end
+        end
+      end
+    end
+    turnTo(1)
+    return t
+  end
+  local function resync()
+    owned = totals()
+    last = invTotals()
+    dirty = false
+  end
+  local function track()
+    local t = invTotals()
+    for _, tg in ipairs(WATCH) do
+      if t[tg] > (last[tg] or 0) then owned[tg] = (owned[tg] or 0) + t[tg] - (last[tg] or 0) end
+      last[tg] = t[tg]
+    end
+    dirty = false
+  end
+  local function have(t)
+    if dirty then track() end
+    return owned[t] or 0
+  end
+
+  -- ---- inventory
+  local function dropJunk()
+    for s = 1, 16 do
+      local n = itemName(s)
+      if n and JUNK[short(n)] then
+        turtle.select(s); turtle.drop()
+      end
+    end
+    turtle.select(1)
+  end
+
+  -- plug a hole in front of / above / below me with something solid (lava, water); false if I have nothing to plug it with
+  local function plug(d)
+    for s = 1, 16 do
+      local n = itemName(s)
+      if n and (short(n) == "cobblestone" or short(n) == "dirt" or short(n) == "cobbled_deepslate" or short(n) == "netherrack") then
+        turtle.select(s)
+        local ok
+        if d == 5 then ok = turtle.placeUp() elseif d == 6 then ok = turtle.placeDown() else turnTo(d); ok = turtle.place() end
+        turtle.select(1)
+        if ok then return true end
+      end
+    end
+    return false
+  end
+
+  local function backHome()
+    if where == "mine" then goTo(0, pos.y, 0, "xz"); goTo(0, 0, 0, "y") end
+  end
+
+  local walkTo                                                 -- forward declaration (surface walking)
+  local function toHome()
+    if where == "surface" then
+      walkTo(0, 0)
+      goTo(0, 0, 0, "y")
+    else
+      goTo(0, 0, 0, "xzy")
+    end
+    turnTo(1)
+  end
+
+  local function unload()
+    local x, y, z = pos.x, pos.y, pos.z
+    act("going home to unload")
+    toHome()
+    stash()
+    resync()
+    if where == "surface" then
+      walkTo(x, z)
+      goTo(x, y, z, "y")
+    else
+      goTo(x, y, z, "yzx")
+    end
+  end
+  local function ensureRoom()
+    if freeSlots() <= 3 then dropJunk() end
+    if freeSlots() <= 1 then unload() end
+  end
+
+  -- ---- the surface: walk one cell in direction d, climbing over ledges and stepping down hills. false = won't cross (water, lava, a machine)
+  local function walk(d)
+    local lifts = 0
+    while true do
+      local ok, data = look(d)
+      if not ok then break end
+      local n = nm(data)
+      if liquid(n) or isProtected(data) then return false end
+      if lifts >= 4 or turtle.inspectUp() then break end
+      step(5); lifts = lifts + 1
+    end
+    step(d)
+    for _ = 1, 8 do
+      local ok, data = turtle.inspectDown()
+      if ok then
+        local n = nm(data)
+        if n:find("lava", 1, true) then
+          step(OPP[d]); return false
+        end
+        break
+      end
+      step(6)
+    end
+    return true
+  end
+  -- x first, then z. Blocked (a chest, water, a wall): sidestep two cells towards the target's side and carry on; no ping-pong because the order is fixed
+  walkTo = function(tx, tz)
+    local blocked, detours = 0, 0
+    for _ = 1, 4000 do
+      if pos.x == tx and pos.z == tz then return true end
+      local d, side
+      if pos.x ~= tx then d = pos.x < tx and 2 or 4; side = { pos.z <= tz and 1 or 3, pos.z <= tz and 3 or 1 }
+      else d = pos.z < tz and 1 or 3; side = { pos.x <= tx and 2 or 4, pos.x <= tx and 4 or 2 } end
+      if walk(d) then blocked = 0 else
+        blocked = blocked + 1
+        detours = detours + 1
+        if blocked > 20 or detours > 6 then return false end
+        for _, sd in ipairs(side) do                          -- step round it: one to the side, two past it (then the fixed order brings me back on line)
+          if walk(sd) then walk(d); walk(d); break end
+        end
+      end
+    end
+    return false
+  end
+
+  -- ---- what the surface offers
+  local function chop(d)
+    local sy = pos.y
+    step(d)                                                    -- digs the log in front and stands in its place
+    local up = 0
+    while up < 40 do
+      local ok, data = turtle.inspectUp()
+      if not (ok and nm(data):find("_log", 1, true)) then break end
+      step(5); up = up + 1
+      for h = 1, 4 do                                          -- leaves round the trunk drop saplings; side branches drop logs
+        local o, dd = look(h)
+        if o then
+          local n = nm(dd)
+          if n:find("leaves", 1, true) or n:find("_log", 1, true) then turtle.dig() end
+        end
+      end
+      ensureRoom()
+    end
+    local ok, data = turtle.inspectUp()
+    if ok and nm(data):find("leaves", 1, true) then turtle.digUp() end
+    while pos.y > sy do step(6) end
+    step(OPP[d])
+    dirty = true
+  end
+  local function cutCane(d)
+    local h = 0
+    while h < 4 do                                             -- up beside the column to its top, then cut downwards so every piece lands in my hands
+      step(5); h = h + 1
+      local ok, data = look(d)
+      if not (ok and nm(data):find("sugar_cane", 1, true)) then break end
+    end
+    step(6); h = h - 1
+    while h >= 0 do
+      local ok, data = look(d)
+      if ok and nm(data):find("sugar_cane", 1, true) then turtle.dig() end
+      if h > 0 then step(6) end
+      h = h - 1
+    end
+    dirty = true
+  end
+
+  local function surfaceGoalsMet()
+    local logs = have("log") + math.floor(have("planks") / 4)
+    return logs >= (needs.log or 0) and have("sapling") >= (needs.sapling or 0)
+      and have("cane") >= (needs.cane or 0) and (have("sand") + have("glass")) >= (needs.glass or 0)
+  end
+  local function surfaceScan()
+    for d = 1, 4 do
+      local ok, data = look(d)
+      if ok then
+        local n = nm(data)
+        if n:find("_log", 1, true) and have("log") < (needs.log or 0) + 8 then chop(d)
+        elseif n:find("sugar_cane", 1, true) and have("cane") < (needs.cane or 0) then cutCane(d)
+        elseif n == "minecraft:sand" and have("sand") + have("glass") < (needs.glass or 0) then
+          for _ = 1, 6 do if not turtle.dig() then break end end
+          dirty = true
+        end
+      end
+    end
+    local ok, data = turtle.inspectDown()
+    if ok and nm(data) == "minecraft:sand" and have("sand") + have("glass") < (needs.glass or 0) then turtle.digDown(); dirty = true end
+  end
+  local function sweep(R)
+    where = "surface"
+    local lane = 0
+    for x = -R, R, 3 do
+      lane = lane + 1
+      local zs, ze = -R, R
+      if lane % 2 == 0 then zs, ze = R, -R end
+      walkTo(x, zs)
+      local z = zs
+      while true do
+        if surfaceGoalsMet() then return true end
+        surfaceScan()
+        ensureRoom()
+        say(TITLE, "", "Looking for trees, sand and cane", "lane " .. lane .. ", logs " .. have("log") .. "/" .. (needs.log or 0), "saplings " .. have("sapling") .. "/" .. (needs.sapling or 0))
+        act("searching the surface")
+        if z == ze then break end
+        local dirz = ze > zs and 1 or -1
+        local nz = z + dirz
+        if walkTo(x, nz) then z = nz else
+          local reached = false                                -- something on the lane (my own chest, water): hop past it
+          local hop = nz
+          for _ = 1, 4 do
+            hop = hop + dirz * 2
+            if (dirz > 0 and hop > ze) or (dirz < 0 and hop < ze) then hop = ze end
+            if walkTo(x, hop) then z = hop; reached = true; break end
+            if hop == ze then break end
+          end
+          if not reached then break end
+        end
+      end
+    end
+    return surfaceGoalsMet()
+  end
+
+  -- ---- underground
+  local function wantedOre(n)
+    local s = short(n):gsub("^deepslate_", "")
+    return s == "coal_ore" or s == "iron_ore" or s == "redstone_ore" or s == "lit_redstone_ore" or s == "diamond_ore"
+  end
+  local function vein(depth)
+    for d = 1, 6 do
+      local ok, data = look(d)
+      if ok and depth < 40 and wantedOre(nm(data)) then
+        step(d)
+        vein(depth + 1)
+        step(OPP[d])
+      end
+    end
+  end
+  -- one tunnel step in direction d, with a look around afterwards; false when I won't go on (lava with nothing to plug it, bedrock)
+  local function tun(d)
+    local ok, data = look(d)
+    local n = nm(data)
+    if ok and (liquid(n)) then
+      if not plug(d) then return false end
+      ok, data = look(d); n = nm(data)
+      if ok and liquid(n) then return false end
+    end
+    if ok and n == "minecraft:bedrock" then return false end
+    step(d)
+    vein(0)
+    dirty = true
+    ensureRoom()
+    return true
+  end
+  local function shaftTo(depth)                                -- depth below the start; stops at bedrock. returns true when bedrock is right below
+    where = "mine"
+    if pos.x ~= 0 or pos.z ~= 0 then goTo(0, pos.y, 0, "xz") end
+    while pos.y > -depth do
+      local ok, data = turtle.inspectDown()
+      local n = nm(data)
+      if ok and n == "minecraft:bedrock" then return true end
+      if ok and liquid(n) and not plug(6) then return false end
+      step(6)
+      vein(0)
+      dirty = true
+      ensureRoom()
+    end
+    local ok, data = turtle.inspectDown()
+    return ok and nm(data) == "minecraft:bedrock"
+  end
+  local function network(spine, rib, goal, label)
+    local sx, sy, sz = pos.x, pos.y, pos.z
+    for i = 1, spine do
+      if goal() then return true end
+      say(TITLE, "", "Mining " .. label, "tunnel " .. i .. " of " .. spine, "ore " .. have("rawiron") .. " iron " .. have("redstone") .. " red " .. have("diamond") .. " dia")
+      act("mining " .. label)
+      if not tun(1) then break end
+      if i % 3 == 0 then
+        local cx, cy, cz = pos.x, pos.y, pos.z
+        for _, dir in ipairs({ 2, 4 }) do
+          for _ = 1, rib do
+            if goal() or not tun(dir) then break end
+          end
+          goTo(cx, cy, cz, "xyz")
+        end
+      end
+    end
+    return goal()
+  end
+
+  -- ---- smelting
+  local function furnaceAt(k) return k, 0, 1 end
+  local function placeFurnaces()
+    local placed = 0
+    goTo(0, 0, 0, "xzy"); turnTo(1)
+    need("furnace", GFURN)                                     -- crafting and taking only work next to the chests, so all furnaces are fetched first
+    stash(); take("furnace", GFURN)
+    for k = 0, GFURN - 1 do
+      goTo(k, 0, 0, "xzy")
+      turnTo(1)
+      local ok, data = turtle.inspect()
+      if ok and short(nm(data)) == "furnace" then
+        placed = placed + 1
+      else
+        if ok then turtle.dig() end
+        local s = slotOfTag("furnace")
+        if s then
+          turtle.select(s)
+          if turtle.place() then placed = placed + 1 end
+          turtle.select(1)
+        end
+      end
+    end
+    goTo(0, 0, 0, "xzy"); turnTo(1)
+    stash()
+    return placed
+  end
+  local function pickUpFurnaces()
+    for k = 0, GFURN - 1 do
+      goTo(k, 0, 0, "xzy")
+      turnTo(1)
+      local ok, data = turtle.inspect()
+      if ok and short(nm(data)) == "furnace" then turtle.dig() end
+    end
+    goTo(0, 0, 0, "xzy"); turnTo(1)
+    stash()
+  end
+  local KIND = {                                               -- tag to smelt, what it becomes, how many are wanted
+    { raw = "rawiron", out = "iron", want = function() return needs.iron or 0 end },
+    { raw = "cobble", out = "stone", want = function() return needs.stone or 0 end },
+    { raw = "sand", out = "glass", want = function() return needs.glass or 0 end },
+  }
+  local function smeltWork(tot)                                -- is there anything worth putting in a furnace?
+    for _, kd in ipairs(KIND) do
+      local spare = tot[kd.raw] - ((kd.raw == "cobble") and (needs.cobble or 0) or 0)
+      if math.min(math.max(0, kd.want() - tot[kd.out]), math.max(0, spare)) > 0 then return true end
+    end
+    return false
+  end
+  local function smeltRound()
+    -- piles: how many of each kind are still to be smelted
+    local piles, tot = {}, totals()
+    for _, kd in ipairs(KIND) do
+      local outHave = tot[kd.out]
+      local rawHave = tot[kd.raw]
+      local spare = rawHave
+      if kd.raw == "cobble" then spare = rawHave - (needs.cobble or 0) end
+      local n = math.min(math.max(0, kd.want() - outHave), math.max(0, spare))
+      if n > 0 then piles[#piles + 1] = { kd = kd, rem = n, f = 0 } end
+    end
+    if #piles == 0 then return false end
+    table.sort(piles, function(a, b) return a.rem > b.rem end)
+    local use = math.min(#piles, GFURN)
+    for i = 1, use do piles[i].f = 1 end
+    for _ = 1, GFURN - use do
+      local best
+      for i = 1, use do
+        if not best or piles[i].rem / piles[i].f > piles[best].rem / piles[best].f then best = i end
+      end
+      piles[best].f = piles[best].f + 1
+    end
+    -- one job per furnace: { raw tag, count }
+    local jobs = {}
+    for i = 1, use do
+      local p = piles[i]
+      local left = p.rem
+      for a = 1, p.f do
+        local n = math.min(64, math.ceil(left / (p.f - a + 1)))
+        if n > 0 then jobs[#jobs + 1] = { raw = p.kd.raw, n = n }; left = left - n end
+      end
+    end
+    -- fetch everything, then load furnace k with job k
+    stash()
+    local need_coal = 0
+    for _, j in ipairs(jobs) do need_coal = need_coal + math.ceil(j.n / 8) end
+    for _, j in ipairs(jobs) do take(j.raw, j.n) end
+    take("coal", need_coal)
+    if count("coal") < need_coal then
+      say(TITLE, "", "Not enough coal to smelt:", "need " .. need_coal .. ", have " .. count("coal"), "Put coal in the chest behind me.", "Waiting...")
+      stash(); sleep(10); return true
+    end
+    local longest = 0
+    for k, j in ipairs(jobs) do
+      local fx = k - 1
+      local coal = math.ceil(j.n / 8)
+      goTo(fx, 0, 0, "xzy"); turnTo(1)
+      local cs = slotOfTag("coal")
+      if cs then turtle.select(cs); turtle.drop(coal); turtle.select(1) end
+      goTo(fx, 1, 0, "y"); step(1)                              -- above the furnace: items go into the input slot
+      local rs = slotOfTag(j.raw)
+      if rs then turtle.select(rs); turtle.dropDown(j.n); turtle.select(1) end
+      step(3); step(6)
+      longest = math.max(longest, j.n)
+    end
+    goTo(0, 0, 0, "xzy"); turnTo(1)
+    stash()
+    -- wait, then collect from below
+    local waited, total = 0, longest * 10 + 12
+    while waited < total do
+      say(TITLE, "", "Smelting in " .. #jobs .. " furnace(s)", waited .. " s of " .. total .. " s")
+      act("waiting for the furnaces")
+      sleep(10); waited = waited + 10
+    end
+    for k = 1, #jobs do
+      local fx = k - 1
+      goTo(fx, -1, 0, "xzy")                                    -- below the furnace row: the output comes out of the bottom
+      step(1)
+      while turtle.suckUp() do end
+      step(3)
+    end
+    goTo(0, 0, 0, "xzy"); turnTo(1)
+    stash()
+    return true
+  end
+
+  -- what is still missing, in plain words (for the final message)
+  local function missingText()
+    local out, t = {}, totals()
+    local function chk(label, got, want) if got < want then out[#out + 1] = (want - got) .. " " .. label end end
+    chk("logs", t.log + math.floor(t.planks / 4), needs.log or 0)
+    chk("iron ingots", t.iron, needs.iron or 0)
+    chk("stone", t.stone, needs.stone or 0)
+    chk("redstone", t.redstone, needs.redstone or 0)
+    chk("diamonds", t.diamond, needs.diamond or 0)
+    chk("glass", t.glass, needs.glass or 0)
+    chk("sugar cane", t.cane, needs.cane or 0)
+    chk("saplings", t.sapling, needs.sapling or 0)
+    return out
+  end
+
+  gatherAll = function()
+    needs = PLAN.needs or {}
+    ensureChest(3, "materials"); ensureChest(4, "sorting")
+    listChest(3); listChest(4); turnTo(1)
+    reportChests(true)
+    resync()
+    local base = {}
+    for k, v in pairs(owned) do base[k] = v end
+    local function cobbleWanted()
+      local n = math.max(0, (needs.stone or 0) - (base.stone or 0)) + (needs.cobble or 0)
+      local smelts = (needs.stone or 0) > (base.stone or 0) or (needs.iron or 0) > (base.iron or 0) or (needs.glass or 0) > (base.glass or 0)
+      if smelts and (base.furnace or 0) < GFURN then n = n + (GFURN - base.furnace) * 8 end
+      return n
+    end
+    local function trip(fuel)
+      stash(); topUpFuel(fuel); take("coal", 16)               -- some coal stays in my pockets (and what I mine joins it): the tank refills itself far from home
+    end
+    -- 1. the surface
+    local logsMissing = (needs.log or 0) - have("log") - math.floor(have("planks") / 4)
+    if logsMissing > 0 or have("sapling") < (needs.sapling or 0) or have("cane") + have("paper") < (needs.cane or 0) or have("glass") + have("sand") < (needs.glass or 0) then
+      say(TITLE, "", "Gathering wood, sand and sugar cane", "on the surface...")
+      trip(1200)
+      sweep(PLAN.radius or 30)
+      toHome(); stash(); resync()
+    end
+    -- 2. the stone level, then the bottom
+    local function stoneGoal() return have("cobble") >= cobbleWanted() end
+    local function oreGoal()
+      return have("rawiron") + have("iron") >= (needs.iron or 0) and have("redstone") >= (needs.redstone or 0) and have("diamond") >= (needs.diamond or 0)
+    end
+    local needStone = not stoneGoal()
+    local needOre = not oreGoal()
+    if needStone or needOre then
+      say(TITLE, "", "Digging for stone and ore", "from a shaft under me...")
+      trip(1500)
+      where = "mine"
+      if needStone then
+        local level = 0
+        for attempt = 1, 3 do
+          level = level + 8
+          shaftTo(level)
+          if network(60, 9, stoneGoal, "stone") then break end
+        end
+      end
+      if needOre then
+        local bedrock = shaftTo(150)
+        if bedrock then
+          for _ = 1, 4 do if pos.y < 0 then step(5) end end    -- bedrock + 4: the best layer for diamonds and redstone
+        end
+        network(100, 12, oreGoal, "ore")
+      end
+      where = "mine"
+      toHome(); stash(); resync()
+      where = "surface"
+    end
+    -- 3. smelt
+    local tt = totals()
+    if smeltWork(tt) then
+      say(TITLE, "", "Placing furnaces to smelt", "iron, stone and glass...")
+      topUpFuel(600)
+      if placeFurnaces() > 0 then
+        for _ = 1, 12 do
+          if not smeltRound() then break end
+        end
+        pickUpFurnaces()
+      end
+    end
+    local miss = missingText()
+    local msg = #miss == 0 and "Everything is gathered." or ("Still missing: " .. table.concat(miss, ", "))
+    say(TITLE, "", msg:sub(1, 38), (#miss > 0) and "Put the rest in the chest behind me." or "Starting to build the turtles.")
+    sleep(2)
+    return miss
+  end
+end
+
 
 local function buildAll(problems)
   ensureChest(3, "materials")
@@ -1356,7 +1961,11 @@ local function main()
         return
       end
     end
-    if args[1] ~= "resume" then fs.delete("carve.foreman.done") end
+    if args[1] ~= "resume" then fs.delete("carve.foreman.done"); fs.delete("carve.foreman.gathered") end
+    if PLAN.gather and PLAN.needs and next(PLAN.needs) and not readFile("carve.foreman.gathered") then
+      gatherAll()                                              -- v8.4: fetch what the chest is missing before building
+      writeFile("carve.foreman.gathered", "done")
+    end
     local made = buildAll(problems)
     local msg = made .. " turtles built and sent out."
     if #problems == 0 then
