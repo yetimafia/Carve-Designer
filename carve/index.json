@@ -23,6 +23,27 @@
    "updated": "2026-10-28T07:31:05Z"
   },
   {
+   "name": "Carve T",
+   "slug": "carve_t",
+   "file": "programs/carve_t.lua",
+   "design": "designs/carve_t.json",
+   "size": [
+    18,
+    18,
+    7
+   ],
+   "blocks": 2023,
+   "foot": [
+    -2,
+    0,
+    0,
+    15,
+    6,
+    17
+   ],
+   "updated": "2026-11-01T09:22:07Z"
+  },
+  {
    "name": "Compressor",
    "slug": "compressor",
    "file": "programs/compressor.lua",
