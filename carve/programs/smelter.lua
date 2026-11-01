@@ -1,4 +1,4 @@
--- built by Carve Designer v8.1
+-- built by Carve Designer v8.5
 -- Carve auto smelter: feeds a row of furnaces from an input chest and puts the results in an output chest.
 --
 -- Layout (top view, you stand on START facing the furnaces, "F" = furnace, it needs free air above and below):
@@ -8,6 +8,10 @@
 --            [in]
 -- Put raw items AND your fuel (coal) in the input chest. Run with  setup  to let the turtle place the furnaces.
 -- It can't dig out furnaces or chests, but it will dig dirt/stone out of its own way (it walks above and below the furnaces).
+--
+-- VERSION NOTES
+--   - 8.2: every pile is split evenly over all furnaces so they run at the same time (allocate); charcoal is the preferred fuel and a
+--     reserve of two rounds is kept (KEEP_CHARCOAL), the surplus goes to the output chest and on into storage.
 
 local args = { ... }
 
@@ -20,6 +24,9 @@ local FUEL_HINT = FUEL:gsub("^minecraft:", "")
 local BURN = { (FUEL:gsub("^minecraft:", "")), "charcoal" }
 local KEEP = {}
 
+-- Shared by every turtle program (it is pasted into each program at its COMMON marker): position tracking, safe movement, fuel,
+-- the Fleet reporting (fleetSend) and the screen helper (say).
+-- Versions: 7.8 Stop from the Fleet page removes the automatic restart; 8.0 every turtle reports its inventory; 8.2 burn() uses charcoal first.
 ---------------------------------------------------------------- shared helpers (position, moving, fuel)
 -- directions: 1 = +z (forward at start), 2 = +x (right), 3 = -z (back), 4 = -x (left), 5 = up, 6 = down
 -- every turtle names itself after a Deadlock hero (by its id) the first time it starts, if it has no label yet
@@ -146,9 +153,17 @@ local function mapSee()
   mapMoves = mapMoves + 1
   local n = mapInspect(turtle.inspect)
   if n then mapNote(pos.x + DX[face], pos.y, pos.z + DZ[face], n) end
-  if mapMoves % 4 == 0 then
+  if mapMoves % 2 == 0 then
     n = mapInspect(turtle.inspectUp); if n then mapNote(pos.x, pos.y + 1, pos.z, n) end
     n = mapInspect(turtle.inspectDown); if n then mapNote(pos.x, pos.y - 1, pos.z, n) end
+  end
+  if mapMoves % 10 == 0 then                                  -- v8.4: now and then look left and right too (the turns cancel out, so my facing is unchanged)
+    local l, r = (face + 2) % 4 + 1, face % 4 + 1
+    turtle.turnLeft()
+    n = mapInspect(turtle.inspect); if n then mapNote(pos.x + DX[l], pos.y, pos.z + DZ[l], n) end
+    turtle.turnRight(); turtle.turnRight()
+    n = mapInspect(turtle.inspect); if n then mapNote(pos.x + DX[r], pos.y, pos.z + DZ[r], n) end
+    turtle.turnLeft()
   end
 end
 local function mapFlush(force)
@@ -178,6 +193,7 @@ end
 local function handleReply(reply)
   local cmd, arg = reply:match("^ok (%a+) ?([%w_%-]*)")
   if cmd then fleet.cmd, fleet.arg = cmd, arg or "" end        -- kept until the program has acted on it
+  -- v7.8: a Stop from the Fleet page must stay stopped. Before, the turtle's startup file restarted the program the next time the world was opened.
   if cmd == "stop" then fleet.stopAsked = true; os.queueEvent("terminate") end
   fleet.world, fleet.peers = nil, {}
   for line in reply:gmatch("[^\n]+") do
@@ -214,6 +230,7 @@ local function fleetSend(force)
   if fleet.extra then                                          -- a program may add fields (the Foreman: inventory and crafting queue)
     local okx, frag = pcall(fleet.extra)
     if okx and type(frag) == "string" then body = body .. frag end
+  -- v8.0: every turtle reports what it carries (slot, item, count) and whether it can craft, for the Inventory tab. Rate-limited: 16 inventory calls per report is not free.
   elseif turtle and turtle.getItemDetail and (force or now - (fleet.invAt or -100) > 8) then      -- everybody else: what I carry (the Fleet page's inventory tab)
     fleet.invAt = now
     local inv = {}
@@ -322,21 +339,21 @@ local function isProtected(data)
 end
 
 -- burn items whose name contains one of BURN (a list) until the turtle has `target` fuel
+-- v8.2: charcoal is burned before coal. Charcoal is made from logs by the smelter, so coal is kept for when nothing else is left.
 local function burn(target)
   local lvl = turtle.getFuelLevel()
   if lvl == "unlimited" then return end
   target = math.min(target, turtle.getFuelLimit())
-  for s = 1, 16 do
-    if turtle.getFuelLevel() >= target then break end
-    local n = itemName(s)
-    if n then
-      for _, w in ipairs(BURN) do
-        if n:find(w, 1, true) and not (KEEP and KEEP[s]) then
-          turtle.select(s)
-          while turtle.getItemCount(s) > 0 and turtle.getFuelLevel() < target do
-            if not turtle.refuel(1) then break end
-          end
-          break
+  local words = { "charcoal" }                                -- charcoal first: it is made from logs, so coal is saved for when it is needed
+  for _, w in ipairs(BURN) do if w ~= "charcoal" then words[#words + 1] = w end end
+  for _, w in ipairs(words) do
+    for s = 1, 16 do
+      if turtle.getFuelLevel() >= target then break end
+      local n = itemName(s)
+      if n and n:find(w, 1, true) and not (KEEP and KEEP[s]) then
+        turtle.select(s)
+        while turtle.getItemCount(s) > 0 and turtle.getFuelLevel() < target do
+          if not turtle.refuel(1) then break end
         end
       end
     end
@@ -546,7 +563,8 @@ do
     if short:find(k, 1, true) then PER_FUEL = v end
   end
 end
-local KEEP_FUEL = 64                                   -- how much of my own fuel I hold on to
+local KEEP_FUEL = 64                                   -- how much of my own coal I hold on to
+local KEEP_CHARCOAL = math.max(64, F * 16)              -- charcoal kept to run every furnace for two rounds; the rest goes to the output chest (and so into storage)
 
 local CHARCOAL = "minecraft:charcoal"
 local SWITCH_AT = 32          -- once I hold this much charcoal I burn that instead of coal or wood
@@ -584,13 +602,12 @@ local function perFuel(name)
   return v
 end
 
--- what to burn for the stack `st`: charcoal once there is a decent supply, else my coal, else the wood itself (making charcoal)
-local function chooseFuel(st)
-  if countOf(CHARCOAL) >= SWITCH_AT and st.name ~= CHARCOAL then return CHARCOAL end
+-- what to burn for `name`: charcoal as soon as I have some (it is made from the logs, so it never runs out), else my coal, else the wood itself
+local function chooseFuel(name)
+  if name ~= CHARCOAL and countOf(CHARCOAL) > 1 then return CHARCOAL end
   if countOf(FUEL) > 1 then return FUEL end
   if countOf("minecraft:coal") > 1 then return "minecraft:coal" end
-  if countOf(CHARCOAL) > 1 then return CHARCOAL end
-  if isWood(st.name) then return st.name end                 -- bootstrap: burn some of the logs to make the first charcoal
+  if isWood(name) then return name end                       -- bootstrap: burn some of the logs to make the first charcoal
   for s = 1, 16 do
     if isWood(itemName(s)) then return itemName(s) end
   end
@@ -625,10 +642,10 @@ end
 local function unload(pending)
   local keep = {}
   for s in pairs(pending or {}) do keep[s] = true end
-  for _, name in ipairs({ FUEL, CHARCOAL }) do                -- my own fuel and charcoal I made: keep up to a stack, send the rest on
+  for _, spec in ipairs({ { FUEL, KEEP_FUEL }, { CHARCOAL, KEEP_CHARCOAL } }) do      -- fuel I need stays; anything above goes on
     local held = 0
-    for _, s in ipairs(slotsOf(name)) do
-      if held < KEEP_FUEL then keep[s] = true; held = held + turtle.getItemCount(s) end
+    for _, s in ipairs(slotsOf(spec[1])) do
+      if held < spec[2] then keep[s] = true; held = held + turtle.getItemCount(s) end
     end
   end
   turnTo(4)
@@ -636,44 +653,84 @@ local function unload(pending)
   turnTo(1)
 end
 
--- drop n of item `name` (not from slot `except`) into the furnace in front: its fuel slot
-local function dropFuel(name, n, except)
+-- drop n of item `name` with `fn` (turtle.drop = into the furnace's fuel slot, turtle.dropDown = its input slot); returns how many went in
+local function dropN(name, n, fn)
+  local gone = 0
   for _, s in ipairs(slotsOf(name)) do
-    if n <= 0 then break end
-    if s ~= except then
-      turtle.select(s)
-      local k = math.min(n, turtle.getItemCount(s))
-      if turtle.drop(k) then n = n - k end
-    end
+    if gone >= n then break end
+    turtle.select(s)
+    local before = turtle.getItemCount(s)
+    fn(math.min(n - gone, before))
+    gone = gone + (before - turtle.getItemCount(s))
   end
   turtle.select(1)
+  return gone
 end
 
 local fuelNote = ""
-local function feed(k, st)
+-- one furnace gets e.count items of e.name plus the fuel for them
+local function feed(k, e)
   toFurnace(k)
-  local fuel = chooseFuel(st)
-  local input = st.count
-  if fuel == st.name then                                   -- burning the very logs I am smelting: split the stack
-    input = math.floor(st.count * 0.6)
-    local f = st.count - input
-    turtle.select(st.slot)
-    turtle.drop(f)
-    turtle.select(1)
+  local fuel = chooseFuel(e.name)
+  local input = e.count
+  if fuel == e.name then                                    -- burning the very logs I am smelting: some of them become the fuel
+    local f = math.ceil(e.count * 0.4)
+    input = e.count - f
+    dropN(e.name, f, turtle.drop)
     fuelNote = "burning logs for fuel"
   elseif fuel then
-    local need = math.ceil(st.count / perFuel(fuel))
-    local keepOne = (fuel == FUEL or fuel == CHARCOAL) and 1 or 0     -- one for the turtle itself
-    dropFuel(fuel, math.min(need, countOf(fuel) - keepOne), st.slot)
+    local keepOne = (fuel == FUEL or fuel == "minecraft:coal") and 1 or 0     -- one coal for the turtle itself
+    dropN(fuel, math.min(math.ceil(e.count / perFuel(fuel)), countOf(fuel) - keepOne), turtle.drop)
     fuelNote = "burning " .. fuel:gsub("^minecraft:", "")
   else
     fuelNote = "no fuel: waiting for logs or coal"
   end
   step(5); step(1)                                          -- above the furnace
-  turtle.select(st.slot)
-  turtle.dropDown(input)
-  turtle.select(1)
+  dropN(e.name, input, turtle.dropDown)
   step(3); step(6)
+end
+
+-- what I hold to smelt, as totals per kind (biggest pile first)
+local function piles()
+  local total, order = {}, {}
+  for s = 1, 16 do
+    local n = itemName(s)
+    if n and not isFuelName(n) and not isBuildItem(n) then
+      if not total[n] then total[n] = 0; order[#order + 1] = n end
+      total[n] = total[n] + turtle.getItemCount(s)
+    end
+  end
+  table.sort(order, function(a, b) return total[a] > total[b] end)
+  return total, order
+end
+
+-- who gets what: every kind gets a furnace, the spare furnaces go to the biggest piles, and each pile is split evenly over its
+-- furnaces so all of them work at the same time (a furnace takes at most one stack)
+-- v8.2: before, one stack went into one furnace, so a single big pile of cobblestone used one furnace. Now each kind gets its own furnaces and the
+-- spare furnaces share the biggest piles.
+local function allocate(total, order)
+  local assigned, used = {}, 0
+  for _, n in ipairs(order) do
+    if used < F then assigned[n] = 1; used = used + 1 end
+  end
+  while used < F do
+    local best, load = nil, 1
+    for _, n in ipairs(order) do
+      local a = assigned[n]
+      if a and a < total[n] and total[n] / a > load then best, load = n, total[n] / a end
+    end
+    if not best then break end
+    assigned[best] = assigned[best] + 1; used = used + 1
+  end
+  local list = {}
+  for _, n in ipairs(order) do
+    local a = assigned[n]
+    if a then
+      local sum = math.min(total[n], a * 64)
+      for i = 1, a do list[#list + 1] = { name = n, count = math.floor(sum / a) + (i <= sum % a and 1 or 0) } end
+    end
+  end
+  return list
 end
 
 local function collect(k)
@@ -754,46 +811,34 @@ local function main()
   local idle, stuck = 0, 0
   while true do
     pull()
-    local stacks, pending = {}, {}
-    for s = 1, 16 do
-      local n = itemName(s)
-      if n and not isFuelName(n) and not isBuildItem(n) then stacks[#stacks + 1] = { slot = s, count = turtle.getItemCount(s), name = n } end
-    end
-    table.sort(stacks, function(a, b) return a.count > b.count end)
-    -- anything that is not a stack to smelt goes to the output chest first (earlier results)
-    if #stacks == 0 then
+    local total, order = piles()
+    if #order == 0 then
       turnTo(1)
       idle = idle + 1
       if PLAN.once then break end
       waitSeconds(30, "Nothing to smelt. Waiting for items.")
     else
       idle = 0
-      local used, longest = {}, 0
-      for i, st in ipairs(stacks) do
-        if i <= F then
-          used[#used + 1] = st
-          longest = math.max(longest, st.count)
-        else
-          pending[st.slot] = true
-        end
-      end
-      for i, st in ipairs(used) do
-        say(TITLE, "", "Loading furnace " .. i .. "/" .. #used, "Items " .. st.count .. " x " .. st.name:gsub("^minecraft:", ""),
-            fuelNote ~= "" and fuelNote or ("charcoal " .. countOf(CHARCOAL) .. "/" .. SWITCH_AT))
-        feed(i, st)
+      local list = allocate(total, order)
+      local before, longest = 0, 0
+      for _, e in ipairs(list) do longest = math.max(longest, e.count) end
+      for _, n in ipairs(order) do before = before + total[n] end
+      for i, e in ipairs(list) do
+        say(TITLE, "", "Loading furnace " .. i .. "/" .. #list, "Items " .. e.count .. " x " .. e.name:gsub("^minecraft:", ""),
+            fuelNote ~= "" and fuelNote or ("charcoal " .. countOf(CHARCOAL) .. "/" .. KEEP_CHARCOAL))
+        feed(i, e)
       end
       home()
-      waitSeconds(longest * 10 + 6, "Smelting " .. #used .. " furnace(s)...")
-      for i = 1, #used do collect(i) end
+      waitSeconds(longest * 10 + 6, "Smelting in " .. #list .. " furnace(s)...")
+      for i = 1, #list do collect(i) end
       home()
-      -- the leftovers of a stack that did not fit stay in me (they are "pending"), then dump the rest
-      local moved = false
-      for _, st in ipairs(used) do
-        local left = itemName(st.slot) == st.name and turtle.getItemCount(st.slot) or 0
-        if left < st.count then moved = true end
-        if left > 0 then pending[st.slot] = true end
+      -- what is left of the kinds I loaded stays in me for the next round; the products and the rest go to the output chest
+      local pending, left = {}, 0
+      for s = 1, 16 do
+        local n = itemName(s)
+        if n and total[n] then pending[s] = true; left = left + turtle.getItemCount(s) end
       end
-      stuck = moved and 0 or stuck + 1
+      stuck = left < before and 0 or stuck + 1
       if stuck >= 2 then
         say(TITLE, "", "Some items won't go into the", "furnaces (not smeltable?).", "Putting them in the output chest.")
         pending = {}
