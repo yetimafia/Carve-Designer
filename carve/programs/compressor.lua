@@ -1,4 +1,4 @@
--- built by Carve Designer v8.1
+-- built by Carve Designer v8.5
 -- Carve auto crafter: crafts one recipe over and over from an input chest into an output chest.
 -- It must be a CRAFTY turtle (a turtle with a crafting table). Chest BEHIND the start = ingredients,
 -- chest on the LEFT = results. The recipe is stored in this program (3x3 grid, row by row).
@@ -13,6 +13,9 @@ local FUEL_HINT = "coal"
 local BURN = { "coal", "charcoal" }
 local KEEP = {}
 
+-- Shared by every turtle program (it is pasted into each program at its COMMON marker): position tracking, safe movement, fuel,
+-- the Fleet reporting (fleetSend) and the screen helper (say).
+-- Versions: 7.8 Stop from the Fleet page removes the automatic restart; 8.0 every turtle reports its inventory; 8.2 burn() uses charcoal first.
 ---------------------------------------------------------------- shared helpers (position, moving, fuel)
 -- directions: 1 = +z (forward at start), 2 = +x (right), 3 = -z (back), 4 = -x (left), 5 = up, 6 = down
 -- every turtle names itself after a Deadlock hero (by its id) the first time it starts, if it has no label yet
@@ -139,9 +142,17 @@ local function mapSee()
   mapMoves = mapMoves + 1
   local n = mapInspect(turtle.inspect)
   if n then mapNote(pos.x + DX[face], pos.y, pos.z + DZ[face], n) end
-  if mapMoves % 4 == 0 then
+  if mapMoves % 2 == 0 then
     n = mapInspect(turtle.inspectUp); if n then mapNote(pos.x, pos.y + 1, pos.z, n) end
     n = mapInspect(turtle.inspectDown); if n then mapNote(pos.x, pos.y - 1, pos.z, n) end
+  end
+  if mapMoves % 10 == 0 then                                  -- v8.4: now and then look left and right too (the turns cancel out, so my facing is unchanged)
+    local l, r = (face + 2) % 4 + 1, face % 4 + 1
+    turtle.turnLeft()
+    n = mapInspect(turtle.inspect); if n then mapNote(pos.x + DX[l], pos.y, pos.z + DZ[l], n) end
+    turtle.turnRight(); turtle.turnRight()
+    n = mapInspect(turtle.inspect); if n then mapNote(pos.x + DX[r], pos.y, pos.z + DZ[r], n) end
+    turtle.turnLeft()
   end
 end
 local function mapFlush(force)
@@ -171,6 +182,7 @@ end
 local function handleReply(reply)
   local cmd, arg = reply:match("^ok (%a+) ?([%w_%-]*)")
   if cmd then fleet.cmd, fleet.arg = cmd, arg or "" end        -- kept until the program has acted on it
+  -- v7.8: a Stop from the Fleet page must stay stopped. Before, the turtle's startup file restarted the program the next time the world was opened.
   if cmd == "stop" then fleet.stopAsked = true; os.queueEvent("terminate") end
   fleet.world, fleet.peers = nil, {}
   for line in reply:gmatch("[^\n]+") do
@@ -207,6 +219,7 @@ local function fleetSend(force)
   if fleet.extra then                                          -- a program may add fields (the Foreman: inventory and crafting queue)
     local okx, frag = pcall(fleet.extra)
     if okx and type(frag) == "string" then body = body .. frag end
+  -- v8.0: every turtle reports what it carries (slot, item, count) and whether it can craft, for the Inventory tab. Rate-limited: 16 inventory calls per report is not free.
   elseif turtle and turtle.getItemDetail and (force or now - (fleet.invAt or -100) > 8) then      -- everybody else: what I carry (the Fleet page's inventory tab)
     fleet.invAt = now
     local inv = {}
@@ -315,21 +328,21 @@ local function isProtected(data)
 end
 
 -- burn items whose name contains one of BURN (a list) until the turtle has `target` fuel
+-- v8.2: charcoal is burned before coal. Charcoal is made from logs by the smelter, so coal is kept for when nothing else is left.
 local function burn(target)
   local lvl = turtle.getFuelLevel()
   if lvl == "unlimited" then return end
   target = math.min(target, turtle.getFuelLimit())
-  for s = 1, 16 do
-    if turtle.getFuelLevel() >= target then break end
-    local n = itemName(s)
-    if n then
-      for _, w in ipairs(BURN) do
-        if n:find(w, 1, true) and not (KEEP and KEEP[s]) then
-          turtle.select(s)
-          while turtle.getItemCount(s) > 0 and turtle.getFuelLevel() < target do
-            if not turtle.refuel(1) then break end
-          end
-          break
+  local words = { "charcoal" }                                -- charcoal first: it is made from logs, so coal is saved for when it is needed
+  for _, w in ipairs(BURN) do if w ~= "charcoal" then words[#words + 1] = w end end
+  for _, w in ipairs(words) do
+    for s = 1, 16 do
+      if turtle.getFuelLevel() >= target then break end
+      local n = itemName(s)
+      if n and n:find(w, 1, true) and not (KEEP and KEEP[s]) then
+        turtle.select(s)
+        while turtle.getItemCount(s) > 0 and turtle.getFuelLevel() < target do
+          if not turtle.refuel(1) then break end
         end
       end
     end
