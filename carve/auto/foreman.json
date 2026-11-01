@@ -116,6 +116,19 @@
  ],
  "dispatch": true,
  "build": true,
- "agent_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/programs/agent.lua",
+ "gather": true,
+ "radius": 30,
+ "needs": {
+  "iron": 47,
+  "stone": 49,
+  "redstone": 11,
+  "diamond": 18,
+  "glass": 6,
+  "log": 45,
+  "cane": 3,
+  "cobble": 16,
+  "sapling": 4
+ },
+ "agent_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/446df1c59bec3add1697151ba1f92ee651425933/carve/programs/agent.lua",
  "launcher_url": "https://raw.githubusercontent.com/yetimafia/Carve-Designer/main/carve/carve.lua"
 }
